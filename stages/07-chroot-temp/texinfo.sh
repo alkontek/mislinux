@@ -1,0 +1,28 @@
+# SPDX-FileCopyrightText: 2026 ALKONTEK <git@alkontek.com>
+# SPDX-License-Identifier: BSD-2-Clause
+
+# shellcheck shell=bash
+# LFS 13.1-systemd §7.13 Texinfo-7.3
+pkg_name=texinfo
+pkg_version=7.3
+pkg_tarball=texinfo-7.3.tar.xz
+pkg_patches=
+pkg_stage=07-chroot-temp
+pkg_pass=1
+pkg_builddir=in-tree
+
+pkg_configure() {
+  ./configure --prefix=/usr
+}
+
+pkg_build() { make ${MISL_MAKEFLAGS:-}; }
+
+pkg_install() {
+  local dest
+  dest=$(misl_dest)
+  if [[ -n $dest ]]; then
+    make DESTDIR="$dest" install
+  else
+    make install
+  fi
+}

@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 ALKONTEK <git@alkontek.com>
+# SPDX-License-Identifier: BSD-2-Clause
+
+# stardate - Bidirectional converter between human datetime and Star Trek Stardates
+
+set -e
+
+FORCE_FORMAT=""
+INPUT_STRING="$*"
+
+if [[ -z "$INPUT_STRING" ]]; then
+  INPUT_STRING="now"
+fi
+
+convert_epoch_to_stardates() {
+  local epoch=$1
+
+  read -r YEAR DAY_OF_YEAR SECONDS_IN_DAY DAYS_IN_YEAR <<< "$(
+    env TZ=UTC date -d "@$epoch" +"%Y %j %s" | awk '{
+      y = $1
+      diy = ((y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)) ? 366 : 365
+      sec = $3 % 86400
+      print y, $2, sec, diy
+    }'
+  )"
+
+  DAY_FRACTION=$(awk -v doy="$DAY_OF_YEAR" -v sec="$SECONDS_IN_DAY" 'BEGIN {
+    printf "%.7f", (doy - 1) + (sec / 86400.0)
+  }')
+
+  KELVIN_SD=$(awk -v y="$YEAR" -v df="$DAY_FRACTION" -v diy="$DAYS_IN_YEAR" 'BEGIN {
+    printf "%.5f", y + (df / diy)
+  }')
+
+  TNG_SD=$(awk -v y="$YEAR" -v df="$DAY_FRACTION" -v diy="$DAYS_IN_YEAR" 'BEGIN {
+    tng_year = y + 340
+    sd = 1000 * (tng_year - 2323) + (1000 * df / diy)
+    printf "%.5f", sd
+  }')
+
+  if [[ "$FORCE_FORMAT" == "kelvin" ]]; then
+    echo "$KELVIN_SD"
+  elif [[ "$FORCE_FORMAT" == "tng" ]]; then
+    echo "$TNG_SD"
+  else
+    DISPLAY_DATE=$(env TZ=UTC date -d "@$epoch" +"%Y-%m-%d %H:%M:%S %Z")
+    echo "Input Time : $DISPLAY_DATE"
+    echo "Kelvin Era : $KELVIN_SD"
+    echo "TNG Era    : $TNG_SD"
+  fi
+}
+
+convert_stardate_to_datetime() {
+  local sd=$1
+  local type=$2
+
+  EPOCH=$(awk -v sd="$sd" -v type="$type" 'BEGIN {
+    if (type == "TNG") {
+      offset = int(sd / 1000)
+      target_year = 2323 + offset - 340
+      diy = ((target_year % 4 == 0 && target_year % 100 != 0) || (target_year % 400 == 0)) ? 366 : 365
+      fraction = (sd - (offset * 1000)) / 1000.0
+      total_seconds = fraction * diy * 86400
+    } else {
+      target_year = int(sd)
+      diy = ((target_year % 4 == 0 && target_year % 100 != 0) || (target_year % 400 == 0)) ? 366 : 365
+      fraction = sd - target_year
+      total_seconds = fraction * diy * 86400
+    }
+
+    leap_days = 0
+    for (y = 1970; y < target_year; y++) {
+      if ((y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)) leap_days++
+    }
+    year_start_epoch = ((target_year - 1970) * 365 + leap_days) * 86400
+
+    # +0.5 ensures correct nearest-second rounding
+    final_epoch = year_start_epoch + total_seconds + 0.5
+    printf "%.0f", final_epoch
+  }')
+
+  UTC_DATE=$(env TZ=UTC date -d "@$EPOCH" +"%Y-%m-%d %H:%M:%S UTC")
+
+  echo "Input Stardate : $sd ($type Format)"
+  echo "Calculated UTC : $UTC_DATE"
+}
+
+if [[ "$INPUT_STRING" =~ ^[3-6][0-9]{4}(\.[0-9]+)?$ ]]; then
+  convert_stardate_to_datetime "$INPUT_STRING" "TNG"
+elif [[ "$INPUT_STRING" =~ ^[1-2][0-9]{3}\.[0-9]+$ ]]; then
+  convert_stardate_to_datetime "$INPUT_STRING" "Kelvin"
+else
+  if TARGET_EPOCH=$(date -d "$INPUT_STRING" +%s 2>/dev/null); then
+    convert_epoch_to_stardates "$TARGET_EPOCH"
+  else
+    echo "Error: Unrecognized format '$INPUT_STRING'." >&2
+    exit 1
+  fi
+fi

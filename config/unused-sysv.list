@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: 2026 ALKONTEK <git@alkontek.com>
+# SPDX-License-Identifier: BSD-2-Clause
+
+# Inherited from the combined LFS wget-list. Not used by MIS Linux systemd.
+# Kept here so `misl sources check` can ignore leftover files an operator
+# might still have staged from wget-list.original.
+sysklogd-2.7.2.tar.gz
+sysvinit-3.14.tar.xz
+sysvinit-3.14-consolidated-1.patch
+udev-lfs-20230818.tar.xz
+lfs-bootscripts-20250827.tar.xz

@@ -1,0 +1,34 @@
+MIS Linux 1.0 (Farpoint) — The source distribution, for exceptional developers and Star Trek fans.
+MIS Linux 1.1 (Stargazer)
+MIS Linux 1.2 (Wolf 359)
+MIS Linux 1.3 (Neutral Zone)
+MIS Linux 1.4 (Q)
+MIS Linux 1.5 (Ten Forward)
+
+MIS Linux 2.0 (Utopia Planitia) — SRPM Support
+MIS Linux 2.1 (Odyssey)
+MIS Linux 2.2 (Sao Paulo)
+MIS Linux 2.3 (Defiant)
+MIS Linux 2.4 (Fredrickson)
+MIS Linux 2.5 (Equinox)
+
+MIS Linux 3.0 (USS Galaxy)
+MIS Linux 3.1 (USS Enterprise)
+MIS Linux 3.2 (USS Yamato)
+MIS Linux 3.3 (USS Challenger)
+MIS Linux 3.4 (USS Venture)
+MIS Linux 3.5 (USS Syracuse)
+
+MIS Linux 4.0 (Voyager)
+MIS Linux 4.1 (Seven of Nine)
+MIS Linux 4.2 (Relativity)
+MIS Linux 4.3 (Delta Flyer)
+MIS Linux 4.4 (Prometheus)
+MIS Linux 4.5 (Endgame)
+
+MIS Linux 5.0 (Unimatrix Zero)
+MIS Linux 5.1 (Locutus of Borg)
+MIS Linux 5.2 (Janeway)
+MIS Linux 5.3 (Hugh)
+MIS Linux 5.4 (Icheb)
+MIS Linux 5.5 (Three of Twelve)

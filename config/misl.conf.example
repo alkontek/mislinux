@@ -1,0 +1,68 @@
+# MIS Linux bootstrap — copy to misl.conf and edit.
+# Environment variables with the same names override this file.
+# Versions are major.minor only (no patch component).
+# Site-specific values are commented; live pins live in misl.conf.
+
+# Two axes (`misl bump` rewrites the first four values):
+#   MISL_VERSION / VERSION file = this bootstrap
+#   MISL_VERSION_ID             = os-release VERSION_ID (same number)
+#   MISL_PRETTY_NAME            = GRUB menu + os-release display
+#   MISL_VERSION_CODENAME       = empty until a named release
+#   MISL_DIST_*                 = product goal; applied when
+#                                 MISL_VERSION == MISL_DIST_VERSION
+MISL_VERSION=0.2
+MISL_NAME="MIS Linux"
+MISL_ID=misl
+MISL_VERSION_ID=0.2
+MISL_VERSION_CODENAME=
+MISL_PRETTY_NAME="MIS Linux 0.2"
+MISL_VARIANT="systemd"
+MISL_VARIANT_ID=systemd
+MISL_DIST_VERSION=1.0
+MISL_DIST_CODENAME=farpoint
+
+MISL_ARCH=x86_64
+
+# Target root mountpoint (required for disk apply / sources stage / prep / build).
+# LFS=/mnt/misl
+
+# Target block device. Never defaulted. disk apply is dry-run unless MISL_DRY_RUN=0
+# and MISL_CONFIRM=YES-DESTROY-DISK. by-id paths are valid; partitions become
+# ${MISL_DISK}-partN (udev), not ${MISL_DISK}N.
+# EFI: part1 = ESP (/boot/efi), part2 = ext4 root.
+# BIOS: part1 = bios_grub, part2 = /boot, part3 = root.
+# MISL_DISK=/dev/disk/by-id/scsi-0DO_Volume_misl
+# MISL_PART_BOOT=/dev/disk/by-id/scsi-0DO_Volume_misl-part1
+# MISL_PART_ROOT=/dev/disk/by-id/scsi-0DO_Volume_misl-part2
+MISL_FSTYPE=ext4
+# Size of the mounted boot partition (ESP on EFI, /boot on BIOS).
+MISL_BOOT_MIB=1024
+# Target firmware: efi (default), bios, or auto (follow the host).
+MISL_FIRMWARE=efi
+MISL_DRY_RUN=1
+MISL_ALLOW_HOST_DISK=0
+
+# Host-wide snapshot. Shared with user lfs (no copy into ~lfs).
+# Always the MIS list, never wget-list.original.
+MISL_SNAPSHOT=/var/cache/misl/misl-1.0-systemd
+MISL_MIRROR=https://makeitsolinux.org/downloads/misl-1.0-systemd
+MISL_WGET_LIST=
+MISL_MD5SUMS=
+MISL_PATCHES=
+MISL_SOURCES=
+# Operator default is fetch on. Agent sessions must export MISL_FETCH=0
+# and must not run `misl sources fetch`.
+MISL_FETCH=1
+
+# Chapter 9 (no prompts). Root hash from: openssl passwd -6
+MISL_HOSTNAME=misl
+MISL_LANG=C.UTF-8
+MISL_TIMEZONE=UTC
+MISL_KEYMAP=us
+# MISL_ROOT_HASH=
+
+# Leave empty to use -jN (nproc, capped at ~1.5GiB RAM/job). Pin -j2 on 2C/4G.
+# MISL_MAKEFLAGS=-j2
+MISL_MAKEFLAGS=
+# Cross triplet stays LFS-shaped until 0.8 identity work.
+LFS_TGT=x86_64-lfs-linux-gnu

@@ -1,0 +1,8 @@
+logs/
+stamps/
+config/misl.conf
+*.swp
+*~
+
+# JetBrains IDEs
+.idea/

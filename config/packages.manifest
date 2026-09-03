@@ -1,0 +1,120 @@
+# SPDX-FileCopyrightText: 2026 ALKONTEK <git@alkontek.com>
+# SPDX-License-Identifier: BSD-2-Clause
+
+# MIS Linux package graph
+# freeze: LFS 13.1-systemd stable
+# docs: https://www.linuxfromscratch.org/lfs/view/systemd/
+# columns: stage name version tarball patches notes
+
+05-cross binutils 2.47 binutils-2.47.tar.xz - pass=1 implemented=0.2
+05-cross gcc 16.2.0 gcc-16.2.0.tar.xz - pass=1 implemented=0.2
+05-cross linux-api-headers 7.1.8 linux-7.1.8.tar.xz - implemented=0.2
+05-cross glibc 2.44 glibc-2.44.tar.xz glibc-fhs-1.patch,glibc-2.44-upstream_fixes-1.patch implemented=0.2
+05-cross libstdc++ 16.2.0 gcc-16.2.0.tar.xz - from=gcc implemented=0.2
+06-temp m4 1.4.21 m4-1.4.21.tar.xz - implemented=0.2
+06-temp ncurses 6.6 ncurses-6.6.tar.gz - implemented=0.2
+06-temp bash 5.3 bash-5.3.tar.gz - implemented=0.2
+06-temp coreutils 9.11 coreutils-9.11.tar.xz - implemented=0.2
+06-temp diffutils 3.12 diffutils-3.12.tar.xz - implemented=0.2
+06-temp file 5.48 file-5.48.tar.gz - implemented=0.2
+06-temp findutils 4.11.0 findutils-4.11.0.tar.xz - implemented=0.2
+06-temp gawk 5.4.1 gawk-5.4.1.tar.xz - implemented=0.2
+06-temp grep 3.12 grep-3.12.tar.xz - implemented=0.2
+06-temp gzip 1.14 gzip-1.14.tar.xz - implemented=0.2
+06-temp make 4.4.1 make-4.4.1.tar.gz - implemented=0.2
+06-temp patch 2.8 patch-2.8.tar.xz - implemented=0.2
+06-temp sed 4.10 sed-4.10.tar.xz - implemented=0.2
+06-temp tar 1.35 tar-1.35.tar.xz tar-1.35-acl_fix-1.patch implemented=0.2
+06-temp xz 5.8.3 xz-5.8.3.tar.xz - implemented=0.2
+06-temp binutils 2.47 binutils-2.47.tar.xz - pass=2 implemented=0.2
+06-temp gcc 16.2.0 gcc-16.2.0.tar.xz - pass=2 implemented=0.2
+07-chroot-temp gettext 1.0 gettext-1.0.tar.xz - implemented=0.2
+07-chroot-temp bison 3.8.2 bison-3.8.2.tar.xz - implemented=0.2
+07-chroot-temp perl 5.44.0 perl-5.44.0.tar.xz - implemented=0.2
+07-chroot-temp python 3.14.7 Python-3.14.7.tar.xz - implemented=0.2
+07-chroot-temp texinfo 7.3 texinfo-7.3.tar.xz - implemented=0.2
+07-chroot-temp util-linux 2.42.2 util-linux-2.42.2.tar.xz - implemented=0.2
+08-system man-pages 6.18 man-pages-6.18.tar.xz - implemented=0.2
+08-system iana-etc 20260805 iana-etc-20260805.tar.gz - implemented=0.2
+08-system glibc 2.44 glibc-2.44.tar.xz glibc-fhs-1.patch glibc-2.44-upstream_fixes-1.patch implemented=0.2
+08-system zlib 1.3.2 zlib-1.3.2.tar.gz - implemented=0.2
+08-system bzip2 1.0.8 bzip2-1.0.8.tar.gz bzip2-1.0.8-install_docs-1.patch implemented=0.2
+08-system xz 5.8.3 xz-5.8.3.tar.xz - implemented=0.2
+08-system lz4 1.10.0 lz4-1.10.0.tar.gz - implemented=0.2
+08-system zstd 1.5.7 zstd-1.5.7.tar.gz - implemented=0.2
+08-system file 5.48 file-5.48.tar.gz - implemented=0.2
+08-system readline 8.3 readline-8.3.tar.gz - implemented=0.2
+08-system pcre2 10.47 pcre2-10.47.tar.bz2 - implemented=0.2
+08-system m4 1.4.21 m4-1.4.21.tar.xz - implemented=0.2
+08-system bc 7.0.3 bc-7.0.3.tar.xz - implemented=0.2
+08-system flex 2.6.4 flex-2.6.4.tar.gz - implemented=0.2
+08-system tcl 8.6.18 tcl8.6.18-src.tar.gz - implemented=0.2
+08-system expect 5.45.4 expect5.45.4.tar.gz expect-5.45.4-gcc15-1.patch implemented=0.2
+08-system dejagnu 1.6.3 dejagnu-1.6.3.tar.gz - implemented=0.2
+08-system ninja 1.13.2 ninja-1.13.2.tar.gz - implemented=0.2
+08-system pkgconf 3.0.5 pkgconf-3.0.5.tar.xz - implemented=0.2
+08-system binutils 2.47 binutils-2.47.tar.xz - implemented=0.2
+08-system gmp 6.3.0 gmp-6.3.0.tar.xz - implemented=0.2
+08-system mpfr 4.2.2 mpfr-4.2.2.tar.xz - implemented=0.2
+08-system mpc 1.4.1 mpc-1.4.1.tar.xz - implemented=0.2
+08-system attr 2.6.0 attr-2.6.0.tar.gz - implemented=0.2
+08-system acl 2.4.0 acl-2.4.0.tar.xz - implemented=0.2
+08-system libcap 2.78 libcap-2.78.tar.xz - implemented=0.2
+08-system libxcrypt 4.5.2 libxcrypt-4.5.2.tar.xz - implemented=0.2
+08-system shadow 4.20.2 shadow-4.20.2.tar.xz - implemented=0.2
+08-system gawk 5.4.1 gawk-5.4.1.tar.xz - implemented=0.2
+08-system gcc 16.2.0 gcc-16.2.0.tar.xz - implemented=0.2
+08-system ncurses 6.6 ncurses-6.6.tar.gz - implemented=0.2
+08-system sed 4.10 sed-4.10.tar.xz - implemented=0.2
+08-system psmisc 23.7 psmisc-23.7.tar.xz - implemented=0.2
+08-system gettext 1.0 gettext-1.0.tar.xz - implemented=0.2
+08-system bison 3.8.2 bison-3.8.2.tar.xz - implemented=0.2
+08-system grep 3.12 grep-3.12.tar.xz - implemented=0.2
+08-system bash 5.3 bash-5.3.tar.gz - implemented=0.2
+08-system libtool 2.6.2 libtool-2.6.2.tar.xz - implemented=0.2
+08-system gdbm 1.26 gdbm-1.26.tar.gz - implemented=0.2
+08-system gperf 3.3 gperf-3.3.tar.gz - implemented=0.2
+08-system expat 2.8.3 expat-2.8.3.tar.xz - implemented=0.2
+08-system inetutils 2.8 inetutils-2.8.tar.gz - implemented=0.2
+08-system less 704 less-704.tar.gz - implemented=0.2
+08-system perl 5.44.0 perl-5.44.0.tar.xz - implemented=0.2
+08-system autoconf 2.73 autoconf-2.73.tar.xz - implemented=0.2
+08-system automake 1.18.1 automake-1.18.1.tar.xz - implemented=0.2
+08-system openssl 4.0.1 openssl-4.0.1.tar.gz - implemented=0.2
+08-system libelf 0.195 elfutils-0.195.tar.bz2 - implemented=0.2
+08-system libffi 3.8.0 libffi-3.8.0.tar.gz - implemented=0.2
+08-system sqlite 3530400 sqlite-autoconf-3530400.tar.gz - implemented=0.2
+08-system mpdecimal 4.0.1 mpdecimal-4.0.1.tar.gz - implemented=0.2
+08-system python 3.14.7 Python-3.14.7.tar.xz Python-3.14.7-openssl_4-1.patch implemented=0.2
+08-system flit-core 4.0.2 flit_core-4.0.2.tar.gz - implemented=0.2
+08-system packaging 26.3 packaging-26.3.tar.gz - implemented=0.2
+08-system wheel 0.48.0 wheel-0.48.0.tar.gz - implemented=0.2
+08-system setuptools 84.0.0 setuptools-84.0.0.tar.gz - implemented=0.2
+08-system meson 1.12.0 meson-1.12.0.tar.gz - implemented=0.2
+08-system kmod 34.2 kmod-34.2.tar.xz - implemented=0.2
+08-system coreutils 9.11 coreutils-9.11.tar.xz coreutils-9.11-i18n-1.patch implemented=0.2
+08-system diffutils 3.12 diffutils-3.12.tar.xz - implemented=0.2
+08-system findutils 4.11.0 findutils-4.11.0.tar.xz - implemented=0.2
+08-system groff 1.24.1 groff-1.24.1.tar.gz - implemented=0.2
+08-system grub 2.14 grub-2.14.tar.xz - implemented=0.2
+08-system gzip 1.14 gzip-1.14.tar.xz - implemented=0.2
+08-system iproute2 7.1.0 iproute2-7.1.0.tar.xz - implemented=0.2
+08-system kbd 2.10.0 kbd-2.10.0.tar.xz kbd-2.10.0-backspace-1.patch implemented=0.2
+08-system libpipeline 1.5.8 libpipeline-1.5.8.tar.gz - implemented=0.2
+08-system make 4.4.1 make-4.4.1.tar.gz - implemented=0.2
+08-system patch 2.8 patch-2.8.tar.xz - implemented=0.2
+08-system tar 1.35 tar-1.35.tar.xz tar-1.35-acl_fix-1.patch implemented=0.2
+08-system texinfo 7.3 texinfo-7.3.tar.xz - implemented=0.2
+08-system vim 9.2.1025 vim-9.2.1025.tar.gz - implemented=0.2
+08-system markupsafe 3.0.3 markupsafe-3.0.3.tar.gz - implemented=0.2
+08-system jinja2 3.1.6 jinja2-3.1.6.tar.gz - implemented=0.2
+08-system systemd 261.2 systemd-261.2.tar.gz - implemented=0.2
+08-system dbus 1.16.2 dbus-1.16.2.tar.xz - implemented=0.2
+08-system man-db 2.13.1 man-db-2.13.1.tar.xz - implemented=0.2
+08-system procps-ng 4.0.7 procps-ng-4.0.7.tar.xz - implemented=0.2
+08-system util-linux 2.42.2 util-linux-2.42.2.tar.xz - implemented=0.2
+08-system e2fsprogs 1.47.4 e2fsprogs-1.47.4.tar.gz - implemented=0.2
+09-config systemd-config 261.2 - - implemented=0.2
+09-config usr-bin 0.2 - - implemented=0.2 overlay=usr/bin
+10-boot linux 7.1.8 linux-7.1.8.tar.xz - implemented=0.2
+10-boot grub 2.14 - - implemented=0.2 efi=EFI/misl

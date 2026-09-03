@@ -1,0 +1,222 @@
+#!/bin/bash
+# SPDX-FileCopyrightText: 2026 ALKONTEK <git@alkontek.com>
+# SPDX-License-Identifier: BSD-2-Clause
+
+# MIS Linux bootstrap entrypoint
+set -euo pipefail
+
+MISL_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+export MISL_ROOT
+
+# shellcheck source=lib/common.sh
+. "$MISL_ROOT/lib/common.sh"
+# shellcheck source=lib/config.sh
+. "$MISL_ROOT/lib/config.sh"
+misl_load_config
+# shellcheck source=lib/host.sh
+. "$MISL_ROOT/lib/host.sh"
+# shellcheck source=lib/disk.sh
+. "$MISL_ROOT/lib/disk.sh"
+# shellcheck source=lib/sources.sh
+. "$MISL_ROOT/lib/sources.sh"
+# shellcheck source=lib/env.sh
+. "$MISL_ROOT/lib/env.sh"
+# shellcheck source=lib/recipe.sh
+. "$MISL_ROOT/lib/recipe.sh"
+# shellcheck source=lib/chroot.sh
+. "$MISL_ROOT/lib/chroot.sh"
+# shellcheck source=lib/pkglog.sh
+. "$MISL_ROOT/lib/pkglog.sh"
+# shellcheck source=lib/version.sh
+. "$MISL_ROOT/lib/version.sh"
+
+misl_help() {
+  cat <<EOF
+MIS Linux $MISL_VERSION bootstrap
+usage: misl <command> [args]
+
+  version              print bootstrap version and os-release identity
+  bump minor|major|undo|X.Y rewrite VERSION + misl.conf (+ example)
+  os-release           print the composed /etc/os-release text
+  help                 this text
+  doctor               host qualification (Fedora 44 / book 2.2)
+  doctor pkgs          print Fedora 44 dnf install line
+  doctor install       dnf install host deps (root, Fedora)
+  disk plan            print partition/mount plan (no writes)
+  disk apply           gates + plan only in 0.2 (does not format)
+  sources fetch        create \$MISL_SNAPSHOT and wget wget-list files
+  sources check        verify wget-list files against md5sums
+  sources stage        hardlink verified files into \$LFS/usr/src/misl
+  sources remote       HEAD-check makeitsolinux.org (no download)
+  prep                 chapter 4 layout + lfs user + env + grant \$LFS
+  prep publish         also copy mislinux/ into ~lfs (not the tarball tree)
+  build <recipe>       run a stages/* recipe (stage/name if ambiguous)
+  build-stage <stage>  run every packages.manifest row for that stage
+  logs [name]          tail recipe log (default: newest under \$LFS/var/lib/misl/logs)
+  status               package graph + stamps
+  config               print last chapter-9 config report
+  config apply         re-run 09-config/systemd-config (MISL_FORCE=1)
+  chroot prep          ch7 owner + virtfs + files + publish scripts into $LFS
+  enter                chroot into $LFS as root
+
+Sources: $MISL_WGET_LIST
+Snapshot: $MISL_SNAPSHOT
+Mirror: $MISL_MIRROR
+Never uses wget-list.original. Fetch defaults to on; agent sessions must not run it.
+EOF
+}
+
+misl_build() {
+  local name=${1:-} f
+  [[ -n $name ]] || die "usage: misl build <recipe|stage/recipe>"
+  if [[ $name == */* ]]; then
+    f=$MISL_ROOT/stages/${name}.sh
+    [[ -f $f ]] || die "no recipe $name"
+  else
+    local matches n
+    matches=$(find "$MISL_ROOT/stages" -type f -name "${name}.sh" | sort)
+    n=$(printf '%s\n' "$matches" | grep -c . || true)
+    if (( n == 0 )); then
+      die "no recipe named $name"
+    elif (( n == 1 )); then
+      f=$matches
+    else
+      # Bare name: only stages this uid may run. lfs stays in 05/06 so
+      # `misl build glibc` after pass1 skips instead of jumping to 08.
+      f=""
+      local stage cand stamp pname ppass stages first
+      first=""
+      if [[ ${EUID:-$(id -u)} -eq 0 ]]; then
+        stages="07-chroot-temp 08-system 09-config 10-boot"
+      else
+        stages="05-cross 06-temp"
+      fi
+      for stage in $stages; do
+        cand=$MISL_ROOT/stages/$stage/${name}.sh
+        [[ -f $cand ]] || continue
+        [[ -n $first ]] || first=$cand
+        pname=$(awk -F= "/^pkg_name=/{gsub(/[\"\047]/,\"\",\$2); print \$2; exit}" "$cand")
+        ppass=$(awk -F= "/^pkg_pass=/{gsub(/[\"\047]/,\"\",\$2); print \$2; exit}" "$cand")
+        pname=${pname:-$name}
+        ppass=${ppass:-1}
+        stamp=${LFS:?}/var/lib/misl/stamps/${stage}-${pname}-${ppass}.done
+        if [[ ! -f $stamp ]]; then
+          f=$cand
+          info "using $f (also: $(printf '%s' "$matches" | tr '\n' ' '))"
+          break
+        fi
+      done
+      [[ -n $f ]] || f=$first
+      if [[ -z $f ]]; then
+        die "no $name recipe for this user; use stage/name (found: $(printf '%s' "$matches" | tr '\n' ' '))"
+      fi
+    fi
+  fi
+  recipe_reset
+  # shellcheck disable=SC1090
+  . "$f"
+  recipe_main
+}
+
+
+misl_logs() {
+  require_lfs_set
+  local dir name f
+  dir=$(misl_lfs_join var/lib/misl/logs)
+  name=${1:-}
+  if [[ -n $name ]]; then
+    f=$(ls -1t "$dir"/*"${name}"* 2>/dev/null | head -1 || true)
+  else
+    f=$(ls -1t "$dir"/*.log 2>/dev/null | head -1 || true)
+  fi
+  [[ -n $f && -f $f ]] || die "no log in $dir"
+  info "log $f"
+  tail -n 80 "$f"
+}
+
+misl_build_stage() {
+  local stage=${1:-} line name
+  [[ -n $stage ]] || die "usage: misl build-stage <05-cross|06-temp|07-chroot-temp|08-system|09-config|10-boot>"
+  require_lfs_set
+  while read -r line; do
+    [[ $line == ${stage}\ * ]] || continue
+    name=$(awk "{print \$2}" <<<"$line")
+    info "stage $stage -> $name"
+    misl_build "$stage/$name"
+  done < "$MISL_ROOT/config/packages.manifest"
+}
+
+cmd=${1:-help}
+shift || true
+case $cmd in
+  bump) misl_bump "$@" ;;
+  version|-v|--version)
+    printf 'MIS Linux %s\n' "$MISL_VERSION"
+    printf 'NAME="%s" ID=%s VERSION_ID="%s" VARIANT="%s" VARIANT_ID=%s\n' \
+      "$MISL_NAME" "$MISL_ID" "$MISL_VERSION_ID" "$MISL_VARIANT" "$MISL_VARIANT_ID"
+    printf 'PRETTY_NAME="%s"\n' "$MISL_PRETTY_NAME"
+    printf 'DIST_VERSION=%s DIST_CODENAME=%s\n' "$MISL_DIST_VERSION" "$MISL_DIST_CODENAME"
+    ;;
+  os-release) misl_os_release_text ;;
+  help|-h|--help) misl_help ;;
+  doctor)
+    sub=${1:-check}; shift || true
+    case $sub in
+      check|"") misl_doctor ;;
+      pkgs|packages) misl_doctor_pkgs ;;
+      install) misl_doctor_install ;;
+      *) die "usage: misl doctor [check|pkgs|install]" ;;
+    esac
+    ;;
+  disk)
+    sub=${1:-plan}; shift || true
+    case $sub in
+      plan) misl_disk_plan ;;
+      apply) misl_disk_apply ;;
+      *) die "usage: misl disk plan|apply" ;;
+    esac
+    ;;
+  sources)
+    sub=${1:-check}; shift || true
+    case $sub in
+      check) misl_sources_check ;;
+      stage) misl_sources_stage ;;
+      fetch) misl_sources_fetch ;;
+      remote) bash "$MISL_ROOT/scripts/check-mirror.sh" ;;
+      *) die "usage: misl sources check|stage|fetch|remote" ;;
+    esac
+    ;;
+  prep) misl_prep "${1:-}" ;;
+  build) misl_build "${1:-}" ;;
+  build-stage) misl_build_stage "${1:-}" ;;
+  status) misl_status ;;
+  config)
+    sub=${1:-show}
+    case $sub in
+      show|"")
+        f=$(misl_lfs_join var/lib/misl/09-config.report)
+        if [[ -f $f ]]; then
+          cat "$f"
+        else
+          die "no 09-config report at $f — run: MISL_FORCE=1 ./misl build 09-config/systemd-config"
+        fi
+        ;;
+      apply)
+        MISL_FORCE=1 misl_build 09-config/systemd-config
+        ;;
+      *) die "usage: misl config [show|apply]" ;;
+    esac
+    ;;
+  logs) misl_logs "${1:-}" ;;
+  chroot)
+    sub=${1:-enter}; shift || true
+    case $sub in
+      prep) misl_chroot_prep ;;
+      enter|"") misl_enter ;;
+      mounts) misl_kernfs_mount ;;
+      *) die "usage: misl chroot [prep|enter|mounts]" ;;
+    esac
+    ;;
+  enter) misl_enter ;;
+  *) die "unknown command: $cmd (try: misl help)" ;;
+esac
