@@ -2,4 +2,5 @@
 # SPDX-License-Identifier: BSD-2-Clause
 
 # shellcheck shell=bash
-misl_overlay_do_undo
+# Installs files/ into $LFS; every path is recorded in the owned list.
+misl_overlay_install_files

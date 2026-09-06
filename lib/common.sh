@@ -106,3 +106,31 @@ misl_report_relpath() {
     printf '%s\n' "$path"
   fi
 }
+
+# chown -R that never crosses a mount: binds under the dirs (the repo at
+# $LFS/usr/src/misl/mislinux, kernfs) keep their owner.
+# usage: misl_chown_tree OWNER [--from USER] DIR...
+misl_chown_tree() {
+  local own=$1 from= m d f=${MISL_MOUNTINFO:-/proc/self/mountinfo}
+  local -a dirs=() prune=()
+  shift
+  if [[ ${1:-} == --from ]]; then from=$2; shift 2; fi
+  for d in "$@"; do [[ -e $d ]] && dirs+=("${d%/}"); done
+  (( ${#dirs[@]} )) || return 0
+  if [[ -r $f ]]; then
+    while IFS= read -r m; do
+      m=$(printf '%b' "$m")
+      for d in "${dirs[@]}"; do
+        if [[ $m == "$d"/* ]]; then
+          prune+=(${prune[@]:+-o} -path "$m")
+          info "chown: skipping mount $m"
+        fi
+      done
+    done < <(awk '{print $5}' "$f")
+  fi
+  if (( ${#prune[@]} )); then
+    find "${dirs[@]}" -xdev \( "${prune[@]}" \) -prune -o ${from:+-user "$from"} -exec chown -h "$own" {} +
+  else
+    find "${dirs[@]}" -xdev ${from:+-user "$from"} -exec chown -h "$own" {} +
+  fi
+}

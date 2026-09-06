@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: 2026 ALKONTEK <git@alkontek.com>
+# SPDX-License-Identifier: BSD-2-Clause
+
+# Names from memory: verify against WHENCE of the staged linux-firmware
+# (./misl firmware list desktop/asus/rog-strix-x570 on the VPS).
+# AMD CPU microcode: handled by the initramfs, not here.
+
+# RTL8125 2.5G NIC (r8169): rtl8125a-3 / rtl8125b-2 depending on rev
+rtl_nic/rtl8125*.fw
+# AX200 Wi-Fi
+iwlwifi-cc-a0-*.ucode
+# AX200 Bluetooth (btintel)
+intel/ibt-20-1-3.sfi
+intel/ibt-20-1-3.ddc

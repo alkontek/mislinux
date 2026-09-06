@@ -177,6 +177,11 @@ pkg_install() {
     printf '\n--- /etc/os-release ---\n'
     cat "${dest}/etc/os-release" 2>/dev/null || true
   } | tee "${dest}/var/lib/misl/09-config.report"
+
+  # Optional docs chosen in MISL_DOCS (staged by `sources stage`).
+  if [[ -n ${MISL_DOCS:-} ]] && declare -F misl_docs_apply_selected >/dev/null; then
+    misl_docs_apply_selected
+  fi
 }
 
 pkg_report() {

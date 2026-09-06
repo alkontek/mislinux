@@ -6,9 +6,6 @@
 
 _misl_cloud_version() { printf '%s\n' "${MISL_CLOUD_INIT_VERSION:-26.2}"; }
 _misl_cloud_tarball() { printf 'cloud-init-%s.tar.gz\n' "$(_misl_cloud_version)"; }
-_misl_cloud_url() {
-  printf '%s/incoming/%s\n' "${MISL_MIRROR:?}" "$(_misl_cloud_tarball)"
-}
 _misl_cloud_user() { printf '%s\n' "${MISL_CLOUD_USER:-root}"; }
 
 misl_cloud_incoming_dir() {
@@ -29,83 +26,24 @@ misl_cloud_dest() {
   fi
 }
 
+# Host only. Every cloud row of config/incoming.manifest (cloud-init
+# tarball and its wheels) from $MISL_MIRROR/incoming/, md5-checked,
+# staged into SOURCES and $LFS/usr/src/misl/SOURCES.
 misl_cloud_fetch() {
   [[ ${MISL_FETCH:-1} == 1 ]] || die "fetch disabled (MISL_FETCH=0); agent sessions must leave fetch off"
   if [[ ${LFS:-} == / ]]; then
     die "cloud fetch runs on the Fedora host (needs wget). exit the chroot first"
   fi
-  local url dest name
-  name=$(_misl_cloud_tarball)
-  url=$(_misl_cloud_url)
-  mkdir -p "$(misl_cloud_incoming_dir)" "${MISL_SOURCES:?}"
-  dest=$(misl_cloud_incoming_dir)/$name
-  misl_fetch_one "$url" "$dest" "${1:-0}"
-  if [[ ! -f $MISL_SOURCES/$name ]]; then
-    ln "$dest" "$MISL_SOURCES/$name" 2>/dev/null || cp -f "$dest" "$MISL_SOURCES/$name"
-  fi
   require_lfs_set
   [[ -d $LFS ]] || die "LFS=$LFS is not a directory"
-  mkdir -p "$LFS/usr/src/misl/SOURCES"
-  if [[ ! -f $LFS/usr/src/misl/SOURCES/$name ]]; then
-    ln "$dest" "$LFS/usr/src/misl/SOURCES/$name" 2>/dev/null || \
-      cp -f "$dest" "$LFS/usr/src/misl/SOURCES/$name"
+  if [[ ${1:-0} == 1 ]]; then
+    rm -f "$(misl_cloud_incoming_dir)/$(_misl_cloud_tarball)"
   fi
-  info "staged $dest"
-  misl_cloud_stage_wheels
-}
-
-misl_cloud_pip_specs() {
-  printf '%s\n' \
-    PyYAML \
-    requests \
-    configobj \
-    jsonpatch \
-    'jsonschema<4.18' \
-    oauthlib
-}
-
-misl_cloud_stage_wheels() {
-  local w name incoming
-  incoming=$(misl_cloud_incoming_dir)
-  mkdir -p "$incoming" "${MISL_SOURCES:?}"
-  if [[ -n ${LFS:-} && ${LFS} != / ]]; then
-    mkdir -p "$LFS/usr/src/misl/SOURCES"
-  fi
-  for w in "$incoming"/*.whl; do
-    [[ -f $w ]] || continue
-    name=$(basename "$w")
-    if [[ ! -f $MISL_SOURCES/$name ]]; then
-      ln "$w" "$MISL_SOURCES/$name" 2>/dev/null || cp -f "$w" "$MISL_SOURCES/$name"
-    fi
-    if [[ -n ${LFS:-} && ${LFS} != / && ! -f $LFS/usr/src/misl/SOURCES/$name ]]; then
-      ln "$w" "$LFS/usr/src/misl/SOURCES/$name" 2>/dev/null || \
-        cp -f "$w" "$LFS/usr/src/misl/SOURCES/$name"
-    fi
-  done
-}
-
-# Host only. pip download into incoming/. Not a mirror requirement.
-misl_cloud_wheels() {
-  [[ ${MISL_FETCH:-1} == 1 ]] || die "fetch disabled (MISL_FETCH=0); agent sessions must leave fetch off"
-  if [[ ${LFS:-} == / ]]; then
-    die "cloud wheels runs on the Fedora host (needs pip + DNS). exit the chroot first"
-  fi
-  require_cmd python3
-  local incoming pip
-  incoming=$(misl_cloud_incoming_dir)
-  mkdir -p "$incoming"
-  if command -v pip3 >/dev/null 2>&1; then
-    pip=pip3
-  elif python3 -m pip --version >/dev/null 2>&1; then
-    pip='python3 -m pip'
-  else
-    die "missing pip3; dnf install python3-pip"
-  fi
-  info "pip download --dest $incoming --only-binary :all: $(misl_cloud_pip_specs | tr '\n' ' ')"
-  # shellcheck disable=SC2086
-  $pip download --dest "$incoming" --only-binary :all: $(misl_cloud_pip_specs)
-  misl_cloud_stage_wheels
-  info "wheels in $incoming"
+  misl_incoming_fetch cloud
+  misl_incoming_check cloud || die "cloud incoming files missing or wrong md5 (see above)"
+  misl_incoming_stage "${MISL_SOURCES:?}" cloud
+  misl_incoming_stage "$LFS/usr/src/misl/SOURCES" cloud
+  info "cloud incoming staged in $LFS/usr/src/misl/SOURCES"
 }
 
 misl_cloud_write_base_cfg() {
@@ -270,12 +208,9 @@ misl_cloud_tune_sshd() {
     'PubkeyAuthentication yes' \
     'AuthorizedKeysFile .ssh/authorized_keys' \
     'UsePAM no' >"$f"
-  # systemd ships this; userdbctl hides /etc/passwd users. Stash, restore on undo.
-  local udb=${dest}/etc/ssh/sshd_config.d/20-systemd-userdb.conf
-  if [[ -f $udb && ! -f ${udb}.misl ]]; then
-    mv -f "$udb" "${udb}.misl"
-  fi
-  rm -f "$udb"
+  # systemd ships this; userdbctl hides /etc/passwd users. Removed
+  # (one-way; misl reset restores it from the snapshot).
+  rm -f "${dest}/etc/ssh/sshd_config.d/20-systemd-userdb.conf"
   if [[ -f $main ]]; then
     sed -i -E 's/^[[:space:]]*UsePAM.*/UsePAM no/' "$main"
     grep -q '^UsePAM' "$main" || printf '%s\n' 'UsePAM no' >>"$main"
@@ -433,6 +368,35 @@ _misl_cloud_list() {
   misl_overlay_own "$path"
 }
 
+# Why cloud is one-way (used by the undo refusal).
+misl_cloud_oneway_why() {
+  printf '%s' "it edits /etc/passwd, /etc/shadow, /etc/group, /etc/ssh/sshd_config, /etc/resolv.conf and sudoers in place, and misl keeps no exact record of the old contents."
+}
+
+# Printed by overlay apply before cloud (or cloud/do) is applied.
+misl_cloud_notice() {
+  cat >&2 <<'EOF'
+==> NOTICE: cloud is a one-way overlay. Applying it edits the tree in place:
+      /etc/passwd /etc/shadow /etc/group  wheel group added; root '!' becomes '*'
+                                          (key login, no password); an old 0.3
+                                          'misl' user and /home/misl are removed
+      /etc/ssh/sshd_config                Include sshd_config.d, UsePAM no
+      /etc/ssh/sshd_config.d              99-misl-cloud.conf added (no password
+                                          login); 20-systemd-userdb.conf removed
+      /etc/sudoers.d/wheel                %wheel ALL=(ALL) NOPASSWD:ALL
+      /etc/resolv.conf                    link to systemd-resolved (if missing
+                                          or already a link)
+      /etc/cloud, /etc/systemd/network    cloud-init config, DHCP on en*/eth*
+      /etc/systemd/system/*.wants         sshd, networkd, resolved, cloud-init,
+                                          serial-getty@ttyS0 enabled
+      /root/.ssh                          created, mode 0700
+      cloud/do also adds /usr/lib/misl/do-ssh-keys and misl-do-sshkeys.service.
+    These edits cannot be undone: ./misl overlay undo cloud refuses.
+    The way back is ./misl reset (restores the snapshot taken before the
+    first overlay apply; ./misl reset --info) or a rebuild.
+EOF
+}
+
 misl_overlay_cloud_apply() {
   require_lfs_set
   local dest report f
@@ -465,45 +429,6 @@ misl_overlay_cloud_apply() {
   fi
 }
 
-# Remove an overlay-owned path. Host apply writes guest-absolute
-# /usr/lib/... wants links; those are dangling on the Fedora host.
-_misl_rm_owned() {
-  local dest=$1 f=$2
-  if [[ -e $f || -L $f ]]; then
-    rm -f "$f"
-    info "removed $(misl_report_relpath "$dest" "$f")"
-  fi
-}
-
-misl_overlay_cloud_undo() {
-  local dest f udb
-  dest=$(misl_cloud_dest)
-  # Ledger in overlays/cloud/owned is the source of truth. This hook
-  # restores files apply stashed, and sweeps leftovers from older applies.
-  for f in \
-    "${dest}/etc/cloud/cloud.cfg.d/90-misl-cloud.cfg" \
-    "${dest}/etc/ssh/sshd_config.d/99-misl-cloud.conf" \
-    "${dest}/var/lib/misl/cloud.wanted" \
-    "${dest}/etc/systemd/network/20-dhcp.network"
-  do
-    _misl_rm_owned "$dest" "$f"
-  done
-  udb=${dest}/etc/ssh/sshd_config.d/20-systemd-userdb.conf
-  if [[ -f ${udb}.misl ]]; then
-    mv -f "${udb}.misl" "$udb"
-    info "restored /etc/ssh/sshd_config.d/20-systemd-userdb.conf"
-  fi
-  if [[ -f ${dest}/usr/sbin/useradd.misl ]]; then
-    mv -f "${dest}/usr/sbin/useradd.misl" "${dest}/usr/sbin/useradd"
-    info "restored /usr/sbin/useradd"
-  fi
-  f=${dest}/etc/sudoers.d/wheel
-  if [[ -f $f ]] && [[ $(tr -d '\n' <"$f") == '%wheel ALL=(ALL) NOPASSWD:ALL' ]]; then
-    rm -f "$f"
-    info "removed /etc/sudoers.d/wheel"
-  fi
-}
-
 misl_overlay_do_apply() {
   local dest report f
   dest=$(misl_cloud_dest)
@@ -517,19 +442,6 @@ misl_overlay_do_apply() {
   _misl_cloud_list "$dest" "${dest}/usr/lib/systemd/system/misl-do-sshkeys.service"
   _misl_cloud_list "$dest" \
     "${dest}/etc/systemd/system/multi-user.target.wants/misl-do-sshkeys.service"
-}
-
-misl_overlay_do_undo() {
-  local dest f
-  dest=$(misl_cloud_dest)
-  for f in \
-    "${dest}/etc/cloud/cloud.cfg.d/99-digitalocean.cfg" \
-    "${dest}/usr/lib/misl/do-ssh-keys" \
-    "${dest}/usr/lib/systemd/system/misl-do-sshkeys.service" \
-    "${dest}/etc/systemd/system/multi-user.target.wants/misl-do-sshkeys.service"
-  do
-    _misl_rm_owned "$dest" "$f"
-  done
 }
 
 misl_cloud_configure() {
@@ -554,49 +466,36 @@ misl_cloud_configure() {
   misl_report_item "$report" "./misl cloud install"
 }
 
-# Root pip into /usr from incoming/ wheels only. Never PyPI.
-# jsonschema wheel must be <4.18 so it does not need rpds-py (Rust).
-misl_cloud_wheel_dir() {
-  local d
-  for d in \
-    /usr/src/misl/SOURCES \
-    "${LFS:+${LFS%/}/usr/src/misl/SOURCES}" \
-    "${MISL_SNAPSHOT:+$MISL_SNAPSHOT/incoming}"
-  do
-    [[ -n $d && -d $d ]] || continue
-    if compgen -G "$d"'/*.whl' >/dev/null 2>&1; then
-      printf '%s\n' "$d"
-      return 0
-    fi
-  done
-  return 1
+# Pinned wheel files (cloud rows, kind=wheel) as paths under incoming/
+# (wheels/<name>.whl), one per line.
+misl_cloud_wheel_files() {
+  misl_incoming_wanted cloud | awk -F'\t' '$5 == "wheel" { print $2 }'
 }
 
+# Root pip into /usr from the staged wheel set only: --no-index, the
+# exact files config/incoming.manifest names. jsonschema stays <4.18 so
+# it does not need rpds-py (Rust). Jinja2/MarkupSafe are base packages.
 misl_cloud_pip_deps() {
   require_cmd python3
-  local missing=() pip links
-  python3 -c 'import yaml' >/dev/null 2>&1 || missing+=(PyYAML)
-  python3 -c 'import requests' >/dev/null 2>&1 || missing+=(requests)
-  python3 -c 'import configobj' >/dev/null 2>&1 || missing+=(configobj)
-  python3 -c 'import jsonpatch' >/dev/null 2>&1 || missing+=(jsonpatch)
-  python3 -c 'import jsonschema' >/dev/null 2>&1 || missing+=(jsonschema)
-  python3 -c 'import oauthlib' >/dev/null 2>&1 || missing+=(oauthlib)
-  python3 -c 'import jinja2' >/dev/null 2>&1 || missing+=(Jinja2)
-  ((${#missing[@]})) || return 0
-  if ! links=$(misl_cloud_wheel_dir); then
-    die "cloud-init python deps missing (${missing[*]}). put wheels in incoming/ or \$LFS/usr/src/misl/SOURCES (no PyPI)"
+  local src=${MISL_CLOUD_SOURCES:-/usr/src/misl/SOURCES} dir f files=() missing=()
+  dir=$src/wheels
+  while IFS= read -r f; do
+    [[ -n $f ]] || continue
+    if [[ -f $src/$f ]]; then
+      files+=("$src/$f")
+    else
+      missing+=("$(basename "$f")")
+    fi
+  done <<<"$(misl_cloud_wheel_files)"
+  if (( ${#missing[@]} )); then
+    die "cloud-init wheels missing in $dir: ${missing[*]}. on the host: ./misl cloud fetch (mirror incoming/)"
   fi
-  if command -v pip3 >/dev/null 2>&1; then
-    pip=pip3
-  elif python3 -m pip --version >/dev/null 2>&1; then
-    pip='python3 -m pip'
-  else
-    die "missing pip3; need incoming wheels for: ${missing[*]}"
-  fi
-  info "pip install --no-index --find-links $links --prefix /usr ${missing[*]}"
-  # shellcheck disable=SC2086
-  $pip install --prefix /usr --no-index --find-links "$links" \
-    --no-cache-dir --root-user-action=ignore "${missing[@]}"
+  (( ${#files[@]} )) || die "no kind=wheel cloud rows in $(misl_incoming_manifest)"
+  python3 -m pip --version >/dev/null 2>&1 || \
+    die "python3 has no pip (08-system python installs it with ensurepip); rebuild 08-system/python"
+  info "pip install --no-index --find-links $dir --prefix /usr (${#files[@]} wheels)"
+  python3 -m pip install --prefix /usr --no-index --find-links "$dir" \
+    --no-cache-dir --root-user-action=ignore "${files[@]}"
 }
 
 misl_cloud_install() {
@@ -607,7 +506,7 @@ misl_cloud_install() {
   local name srcdir build tarball
   name=$(_misl_cloud_tarball)
   tarball=/usr/src/misl/SOURCES/$name
-  [[ -f $tarball ]] || die "missing $tarball — on the host: ./misl cloud apply"
+  [[ -f $tarball ]] || die "missing $tarball. on the host: ./misl cloud fetch (cloud apply runs it too)"
   srcdir=/usr/src/misl/build/cloud-init-$(_misl_cloud_version)
   rm -rf "$srcdir"
   mkdir -p "$srcdir"
@@ -673,38 +572,13 @@ misl_cloud_status() {
   fi
 }
 
-# Compat undo for `misl cloud undo` (overlay undo is preferred).
-misl_cloud_undo() {
-  require_lfs_set
-  [[ -d $LFS ]] || die "LFS=$LFS is not a directory"
-  local dest f
-  dest=$(misl_cloud_dest)
-  for f in \
-    "${dest}/etc/cloud/cloud.cfg.d/99-digitalocean.cfg" \
-    "${dest}/etc/ssh/sshd_config.d/99-misl-cloud.conf" \
-    "${dest}/var/lib/misl/cloud.wanted" \
-    "${dest}/usr/lib/misl/do-ssh-keys" \
-    "${dest}/usr/lib/systemd/system/misl-do-sshkeys.service" \
-    "${dest}/etc/systemd/system/multi-user.target.wants/misl-do-sshkeys.service"
-  do
-    _misl_rm_owned "$dest" "$f"
-  done
-  f=${dest}/etc/sudoers.d/wheel
-  if [[ -f $f ]] && [[ $(tr -d '\n' <"$f") == '%wheel ALL=(ALL) NOPASSWD:ALL' ]]; then
-    rm -f "$f"
-    info "removed /etc/sudoers.d/wheel"
-  fi
-  rm -f "$(misl_cloud_report_path)"
-  info "cloud apply undone (user, networkd, and cloud-init package kept)"
-}
-
 misl_cloud_apply() {
   local force=0
   while [[ $# -gt 0 ]]; do
     case $1 in
       --reinstall|--force) force=1; shift ;;
       -h|--help)
-        printf '%s\n' "usage: misl cloud apply|undo|install|status|sanitize|fetch|wheels"
+        printf '%s\n' "usage: misl cloud apply|undo|install|status|sanitize|fetch"
         printf '%s\n' "  cloud apply is overlay apply cloud do"
         return 0
         ;;
@@ -716,7 +590,7 @@ misl_cloud_apply() {
   if [[ ${LFS:-} == / ]]; then
     die "cloud apply runs on the Fedora host. exit the chroot first"
   fi
-  misl_overlay_apply cloud do
+  misl_overlay_apply cloud/do
   misl_cloud_status || true
 }
 
@@ -725,15 +599,11 @@ misl_cloud() {
   shift || true
   case $sub in
     apply) misl_cloud_apply "$@" ;;
-    undo|revert)
-      misl_overlay_undo do 2>/dev/null || misl_overlay_do_undo
-      misl_overlay_undo cloud 2>/dev/null || misl_overlay_cloud_undo
-      ;;
+    undo|revert) misl_overlay_oneway_refuse cloud ;;
     fetch) misl_cloud_fetch "${1:-0}" ;;
-    wheels) misl_cloud_wheels ;;
     install) misl_cloud_install ;;
     sanitize) misl_cloud_sanitize ;;
     status|show|"") misl_cloud_status ;;
-    *) die "usage: misl cloud apply|undo|install|status|sanitize|fetch|wheels" ;;
+    *) die "usage: misl cloud apply|undo|install|status|sanitize|fetch" ;;
   esac
 }

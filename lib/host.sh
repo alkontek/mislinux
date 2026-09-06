@@ -15,16 +15,19 @@ PY
 }
 
 # Tools plus the bits this bootstrap actually invokes
-# (wget, parted, mkfs.ext4, mkfs.vfat).
+# (wget, parted, mkfs.ext4, mkfs.vfat; grub-mkrescue, xorriso,
+# mksquashfs, mtools, losetup for misl img / misl iso).
 misl_fedora_host_rpms() {
   printf '%s\n' \
     bash binutils bison gcc gcc-c++ make patch \
-    perl python3 python3-pip \
+    perl python3 \
     glibc-devel \
     coreutils diffutils findutils gawk grep gzip sed tar xz \
     texinfo \
     wget \
-    parted e2fsprogs dosfstools
+    parted e2fsprogs dosfstools \
+    grub2-tools-extra grub2-pc-modules grub2-efi-x64-modules \
+    xorriso squashfs-tools mtools cpio rsync util-linux
 }
 
 # Fedora 44 no longer ships yacc, link to /usr/bin/bison instead
@@ -176,6 +179,23 @@ misl_doctor() {
     if [[ -n $bv ]] && _ver_ge "$bv" 2.47.1; then
       note "host binutils $bv is newer than LFS 13.1-systemd tested ceiling 2.47.0"
     fi
+  fi
+
+  # ISO/img tools: only `misl img` / `misl iso` need them, so notes, not issues.
+  local c iso_miss=()
+  for c in xorriso mksquashfs cpio rsync losetup blkid mformat mcopy; do
+    command -v "$c" >/dev/null 2>&1 || iso_miss+=("$c")
+  done
+  command -v grub2-mkrescue >/dev/null 2>&1 || command -v grub-mkrescue >/dev/null 2>&1 \
+    || iso_miss+=(grub2-mkrescue)
+  if (( ${#iso_miss[@]} )); then
+    note "misl iso needs: ${iso_miss[*]}. run: misl doctor install"
+  else
+    info "iso tools present (grub-mkrescue xorriso mksquashfs mtools)"
+  fi
+  if declare -F misl_iso_grub_dir >/dev/null; then
+    misl_iso_grub_dir i386-pc >/dev/null 2>&1 || note "no GRUB i386-pc modules (BIOS iso). run: misl doctor install"
+    misl_iso_grub_dir x86_64-efi >/dev/null 2>&1 || note "no GRUB x86_64-efi modules (UEFI iso). run: misl doctor install"
   fi
 
   if [[ ${LFS:-} != / && -n ${LFS:-} && -d $LFS/usr/src/misl/mislinux ]]; then

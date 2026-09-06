@@ -6,6 +6,12 @@
 # wget-list + md5sums.
 # No process substitution — this workspace has no /dev/fd.
 
+# Group filter (group= rows, incoming/ files) lives in groups.sh.
+if ! declare -F misl_groups_prepare >/dev/null; then
+  # shellcheck source=lib/groups.sh
+  . "${BASH_SOURCE[0]%/*}/groups.sh"
+fi
+
 misl_is_unused() {
   local name=$1 f=$MISL_ROOT/config/unused-sysv.list line
   [[ -f $f ]] || return 1
@@ -40,6 +46,9 @@ misl_md5_for() {
 
 misl_locate() {
   local name=$1
+  if [[ -n ${MISL_DOCS_DIR:-} && -f $MISL_DOCS_DIR/$name ]] && misl_docs_row "$name" >/dev/null 2>&1; then
+    printf '%s\n' "$MISL_DOCS_DIR/$name"; return 0
+  fi
   if [[ $name == *.patch ]]; then
     [[ -f $MISL_PATCHES/$name ]] && { printf '%s\n' "$MISL_PATCHES/$name"; return 0; }
     [[ -f $MISL_SOURCES/$name ]] && { printf '%s\n' "$MISL_SOURCES/$name"; return 0; }
@@ -64,9 +73,11 @@ misl_each_wget() {
 }
 
 misl_sources_check() {
-  local url name path expect actual missing=0 mismatch=0 unused_ok=0 needed=0 tmp
+  local url name path expect actual missing=0 mismatch=0 unused_ok=0 needed=0 tmp docs_skipped=0 group_skipped=0
   info "checking sources against $MISL_WGET_LIST"
-  info "md5sums=$MISL_MD5SUMS sources=$MISL_SOURCES patches=$MISL_PATCHES"
+  misl_groups_prepare
+  info "groups: base${MISL_GROUPS_SEL% }"
+  info "md5sums=$MISL_MD5SUMS sources=$MISL_SOURCES patches=$MISL_PATCHES docs=$MISL_DOCS_DIR"
   tmp=$(mktemp)
   misl_each_wget >"$tmp"
   while IFS=$'\t' read -r url name; do
@@ -76,7 +87,25 @@ misl_sources_check() {
       unused_ok=$((unused_ok + 1))
       continue
     fi
-    if ! path=$(misl_locate "$name"); then
+    if ! misl_group_tarball_wanted "$name"; then
+      info "GROUP-SKIP $name (group not selected)"
+      group_skipped=$((group_skipped + 1))
+      continue
+    fi
+    # docs/: optional. Missing is fine unless wanted; present must match.
+    if misl_is_doc_url "$url"; then
+      path=${MISL_DOCS_DIR:?}/$name
+      if [[ ! -f $path ]]; then
+        if misl_docs_wanted "$name"; then
+          warn "MISSING doc $name (wanted by MISL_DOCS/MISL_FETCH_DOCS)"
+          missing=$((missing + 1))
+        else
+          info "OPTIONAL doc $name (not fetched)"
+          docs_skipped=$((docs_skipped + 1))
+        fi
+        continue
+      fi
+    elif ! path=$(misl_locate "$name"); then
       warn "MISSING $name"
       missing=$((missing + 1))
       continue
@@ -96,7 +125,8 @@ misl_sources_check() {
   done < "$tmp"
   rm -f "$tmp"
 
-  info "needed=$needed missing=$missing mismatch=$mismatch unused-skipped=$unused_ok"
+  misl_incoming_check || missing=$((missing + 1))
+  info "needed=$needed missing=$missing mismatch=$mismatch unused-skipped=$unused_ok docs-optional=$docs_skipped group-skipped=$group_skipped"
   if (( missing + mismatch > 0 )); then
     return 1
   fi
@@ -109,10 +139,23 @@ misl_sources_stage() {
   local dest=$LFS/usr/src/misl tmp url name path
   mkdir -pv "$dest"/{SOURCES,SPECS,SRPMS,RPMS/x86_64,RPMS/noarch} \
             "$LFS/var/lib/misl"/{stamps,logs,pkglog}
+  misl_groups_prepare
+  info "groups: base${MISL_GROUPS_SEL% }"
   tmp=$(mktemp)
   misl_each_wget >"$tmp"
   while IFS=$'\t' read -r url name; do
     misl_is_unused "$name" && continue
+    misl_group_tarball_wanted "$name" || { info "skip $name (group not selected)"; continue; }
+    # Docs go to usr/src/misl/DOCS, and only the ones MISL_DOCS names.
+    if misl_is_doc_url "$url"; then
+      misl_docs_wanted "$name" || continue
+      [[ -f $MISL_DOCS_DIR/$name ]] || die "cannot stage missing doc $name (MISL_FETCH_DOCS=1 misl sources fetch)"
+      mkdir -p "$dest/DOCS"
+      [[ -f $dest/DOCS/$name ]] || ln "$MISL_DOCS_DIR/$name" "$dest/DOCS/$name" 2>/dev/null || \
+        cp -v "$MISL_DOCS_DIR/$name" "$dest/DOCS/$name"
+      info "staged doc $name"
+      continue
+    fi
     path=$(misl_locate "$name") || die "cannot stage missing $name"
     if [[ -f $dest/SOURCES/$name ]]; then
       info "already staged $name"
@@ -123,6 +166,8 @@ misl_sources_stage() {
     fi
   done < "$tmp"
   rm -f "$tmp"
+  misl_incoming_stage "$dest/SOURCES"
+  misl_groups_record
 }
 
 # Host-wide snapshot at /var/cache/misl/... is writable by root and lfs.
@@ -146,7 +191,12 @@ misl_snapshot_share() {
 misl_snapshot_layout() {
   [[ -n ${MISL_SNAPSHOT:-} ]] || die "MISL_SNAPSHOT is not set"
   misl_snapshot_share
-  mkdir -pv "$MISL_SNAPSHOT" "$MISL_SOURCES" "$MISL_PATCHES"
+  # Same defaults as misl_config_load (lib/config.sh) for callers that
+  # set only MISL_SNAPSHOT (was: MISL_DOCS_DIR unbound under set -u).
+  : "${MISL_SOURCES:=$MISL_SNAPSHOT/sources}" "${MISL_PATCHES:=$MISL_SNAPSHOT/patches}"
+  : "${MISL_DOCS_DIR:=$MISL_SNAPSHOT/docs}"
+  export MISL_SOURCES MISL_PATCHES MISL_DOCS_DIR
+  mkdir -pv "$MISL_SNAPSHOT" "$MISL_SOURCES" "$MISL_PATCHES" "$MISL_DOCS_DIR"
   misl_snapshot_share
 }
 
@@ -297,16 +347,22 @@ misl_sources_fetch() {
 
   # Catalog lives at the snapshot root. Always refresh it so a package
   # added to the remote wget-list mid-build is visible on the next fetch.
-  # wget-list URLs point at $MISL_MIRROR/sources/* and $MISL_MIRROR/patches/*.
+  # wget-list URLs point at $MISL_MIRROR/{sources,patches,docs}/*.
   misl_catalog_refresh_files
 
   local tmp url name dest
+  misl_groups_prepare
+  info "groups: base${MISL_GROUPS_SEL% }"
   tmp=$(mktemp)
   misl_each_wget >"$tmp"
   while IFS=$'\t' read -r url name; do
     [[ $name != wget-list.original ]] || continue
     misl_is_unused "$name" && { info "SKIP unused-sysv $name"; continue; }
-    if [[ $name == *.patch ]]; then
+    misl_group_tarball_wanted "$name" || { info "SKIP group $name (MISL_GROUPS or overlay packages= to fetch)"; continue; }
+    if misl_is_doc_url "$url"; then
+      misl_docs_wanted "$name" || { info "SKIP doc $name (MISL_FETCH_DOCS=1 or MISL_DOCS to fetch)"; continue; }
+      dest=$MISL_DOCS_DIR/$name
+    elif [[ $name == *.patch ]]; then
       dest=$MISL_PATCHES/$name
     else
       dest=$MISL_SOURCES/$name
@@ -314,6 +370,7 @@ misl_sources_fetch() {
     misl_fetch_one "$url" "$dest"
   done < "$tmp"
   rm -f "$tmp"
+  misl_incoming_fetch
   info "snapshot=$MISL_SNAPSHOT"
 }
 

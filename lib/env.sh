@@ -36,7 +36,7 @@ misl_lfs_grant_target() {
             "$LFS/tools"
   chown -v lfs:lfs "$LFS"/{usr,lib,var,etc,bin,sbin,tools} 2>/dev/null || true
   [[ -e $LFS/lib64 ]] && chown -v lfs:lfs "$LFS/lib64" || true
-  chown -R lfs:lfs "$LFS/usr" "$LFS/var" "$LFS/tools" "$LFS/etc"
+  misl_chown_tree lfs:lfs "$LFS/usr" "$LFS/var" "$LFS/tools" "$LFS/etc"
   info "granted lfs write on $LFS/{usr,var,tools,etc}"
 }
 

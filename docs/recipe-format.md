@@ -40,7 +40,16 @@ may be missing. The libstdc++ stub file is `stages/05-cross/libstdcxx.sh`.
 
 PkgLog columns: name, version, tarball, md5, stage, pass, timestamp.
 
-## Mid-build integrate (0.3)
+`misl status` states: `done` (stamp), `integrated`, `ready` (row has
+`implemented=` and a non-stub recipe), `norecipe` (`implemented=` but no
+recipe file), `blocked` (notes carry `blocked=<dep>`: a dependency not on
+the mirror yet), `stub`.
+
+`linux-firmware` (10-boot) only stages the tree under
+`/usr/share/misl/linux-firmware`; `/lib/firmware` is filled per overlay
+from `firmware.list` (plan-0.4 item 5).
+
+## Mid-build integrate
 
 A package added to the remote snapshot after `misl sources fetch` already
 ran is pulled in with:
@@ -60,3 +69,12 @@ integrate of the same name dies. Change the version with `--reintegrate`,
 then `MISL_FORCE=1 ./misl build` inside the chroot. One registry file
 per name under `$LFS/var/lib/misl/integrated/` — two `openssh` rows
 or two integrated versions are refused.
+
+## pkg_check (optional)
+
+Runs after `pkg_install`/`pkg_post_install`, in the build dir, in the
+same build context (inside the chroot for 07+). A non-zero return or
+`die` fails the recipe: no pkglog line, no stamp. Check files under
+`$(misl_dest)` so DESTDIR installs work. Run target binaries through
+`misl_check_run cmd ...`, which skips with a warning when installing
+into a DESTDIR. `MISL_SKIP_CHECK=1` skips all checks.

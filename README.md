@@ -78,42 +78,45 @@ logout
 **Sanitize and create an image:**
 ```
 ./misl cloud sanitize
-./misl img pack --from-tree --gzip -o /var/tmp/misl-0.3-terminal.img
-./misl img test -o /var/tmp/misl-0.3-terminal.img
+./misl img pack --from-tree --gzip -o /var/tmp/misl-0.4.img
+./misl img test -i /var/tmp/misl-0.4.img
 ```
 
 
 `./misl cloud apply` is the same as `overlay apply cloud do`. See
-[overlays.md](docs/overlays.md) and [operator-0.3.md](docs/operator-0.3.md).
+[overlays.md](docs/overlays.md) and [operator-0.4.md](docs/operator-0.4.md).
 
 ## Creating and Testing Images
 
+From-scratch build of the terminal, cloud/do and ROG Strix X570
+images: [docs/build-0.4.md](docs/build-0.4.md).
+
 ### The `img` command
 ```
-./misl img pack --from-tree --gzip -o /var/tmp/misl-0.3-terminal.img
-./misl img pack --from-disk -o /var/tmp/misl-0.3-terminal.img
-./misl img test --virtio -i /var/tmp/misl-0.3-terminal.img
-./misl img test --ide -i /var/tmp/misl-0.3-terminal.img
+./misl img pack --from-tree --gzip -o /var/tmp/misl-0.4.img
+./misl img pack --from-disk -o /var/tmp/misl-0.4.img
+./misl img test --virtio -i /var/tmp/misl-0.4.img
+./misl img test --ide -i /var/tmp/misl-0.4.img
 ```
 
 ### The `iso` command
 
 **Creating a BIOS image:**
 ```
-./misl iso pack --bios --live  /var/tmp/misl-0.3-terminal.img /var/tmp/misl-0.3-terminal-bios.iso
-./misl iso test --bios /var/tmp/misl-0.3-terminal-bios.iso
+./misl iso pack --bios --live  /var/tmp/misl-0.4.img /var/tmp/misl-0.4-bios.iso
+./misl iso test --bios /var/tmp/misl-0.4-bios.iso
 ```
 
 **Creating a UEFI image:**
 ```
-./misl iso pack --uefi --live  /var/tmp/misl-0.3-terminal.img /var/tmp/misl-0.3-terminal-uefi.iso
-./misl iso test --uefi /var/tmp/misl-0.3-terminal-uefi.iso
+./misl iso pack --uefi --live  /var/tmp/misl-0.4.img /var/tmp/misl-0.4.iso
+./misl iso test --uefi /var/tmp/misl-0.4.iso
 ```
 
 **Write a live USB (wipes the stick):**
 ```
 ./misl iso usb --list
-MISL_FORCE=1 ./misl iso usb /var/tmp/misl-0.3-terminal-uefi.iso /dev/disk/by-id/usb-…
+MISL_FORCE=1 ./misl iso usb /var/tmp/misl-0.4.iso /dev/disk/by-id/usb-…
 ```
 
 ----
@@ -129,7 +132,7 @@ usage: misl <command> [args]
   help                 this text
   doctor               host qualification (Fedora 44)
   doctor pkgs          print Fedora 44 dnf install line
-  doctor install       dnf install host deps (root, Fedora)
+  doctor install       dnf install host deps incl. img/iso tools (root, Fedora)
   disk plan            print partition/mount plan (no writes)
   disk apply           gates + plan only (policy A; does not format)
   sources fetch        refresh catalog, create $MISL_SNAPSHOT, wget wget-list files
@@ -155,13 +158,18 @@ usage: misl <command> [args]
   overlay list|status|apply|undo|install
                        named extras on the base tree (cloud, do, …)
   cloud apply          overlay apply cloud do (compat)
-  cloud undo           overlay undo do then cloud
+  cloud undo           refuses: cloud is one-way (use reset)
+  reset --all          host root: wipe $LFS + build state, keep downloads and
+                       images (--dry-run lists; --lfs-home also ~lfs copies)
   cloud install        chroot: meson-install cloud-init (cloud overlay)
   cloud status         print $LFS/var/lib/misl/cloud.report
   cloud sanitize       drop machine-id / ssh host keys / cloud-init seed
-  cloud wheels         host: pip download deps into incoming/ (needs DNS)
+  cloud fetch          host: cloud-init + pinned wheels from mirror incoming/
+                       (config/incoming.manifest, md5-checked) into SOURCES
   img pack             host root: pack $LFS into a BIOS GPT .img
   img test             host qemu of that .img (--virtio default, --ide to compare)
+  img/iso names        misl-VER[-TAG].img|.iso in cwd; TAG = applied leaf
+                       overlays (/ -> -) or MISL_IMG_TAG; -o FILE overrides
   iso pack             host root: live ISO from a packed .img (--uefi default)
   iso test             host qemu of that .iso (--uefi default, --bios for SeaBIOS)
   iso test --inspect   mount ISO, unpack initramfs, list /init + libs (no qemu)
@@ -178,8 +186,9 @@ Mirror: https://makeitsolinux.org/downloads/misl-1.0-systemd
 
 ## Resources
 
-* Version `0.3` operator notes: [operator-0.3.md](docs/operator-0.3.md)
+* Version `0.4` operator notes: [operator-0.4.md](docs/operator-0.4.md)
 * Version `0.3` Fedora 44 / DigitalOcean image test: [test-0.3-do-vps.md](docs/test-0.3-do-vps.md)
+* Version `0.3` operator notes: [operator-0.3.md](docs/operator-0.3.md)
 * Version `0.2` operator notes: [operator-0.2.md](docs/operator-0.2.md)
 * The [Official Website](https://makeitsolinux.org/)
 * Version 1.0 [Repository](https://makeitsolinux.org/downloads/misl-1.0-systemd/).

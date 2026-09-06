@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: 2026 ALKONTEK <git@alkontek.com>
+# SPDX-License-Identifier: BSD-2-Clause
+
+# Optional docs (mirror docs/). Not in the package graph; never built.
+# misl docs list|install|remove <name>. MISL_DOCS="name ..." installs at 09-config.
+# columns: name version tarball package path
+python-docs 3.14.7 python-3.14.7-docs-html.tar.bz2 python /usr/share/doc/python-3.14.7/html
+sqlite-docs 3530400 sqlite-doc-3530400.zip sqlite /usr/share/doc/sqlite-3530400
+tcl-docs 8.6.18 tcl8.6.18-html.tar.gz tcl /usr/share/doc/tcl-8.6.18

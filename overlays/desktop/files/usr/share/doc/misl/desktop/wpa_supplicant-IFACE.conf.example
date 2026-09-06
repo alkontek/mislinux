@@ -1,0 +1,14 @@
+# Copy to /etc/wpa_supplicant/wpa_supplicant-<iface>.conf (chmod 600),
+# e.g. wpa_supplicant-wlp5s0.conf, then:
+#   systemctl enable --now wpa_supplicant@wlp5s0.service
+# Generate a hashed psk:  wpa_passphrase 'MySSID' 'passphrase'
+ctrl_interface=DIR=/run/wpa_supplicant GROUP=wheel
+update_config=1
+country=IL
+
+network={
+	ssid="MySSID"
+	psk="change-me"
+	key_mgmt=WPA-PSK SAE
+	ieee80211w=1
+}
