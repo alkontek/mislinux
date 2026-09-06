@@ -37,6 +37,7 @@ _misl_load_file() {
     val=${line#*=}
     [[ $key =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || die "bad config key in $file: $key"
     val=$(_misl_unquote "$val")
+    [[ -n $val ]] && _MISL_FROM_CONF+="$key "
     if [[ -z ${!key+x} ]]; then
       printf -v "$key" '%s' "$val"
       export "$key"
@@ -92,6 +93,9 @@ misl_write_os_release() {
 
 misl_load_config() {
   local conf=${MISL_CONF:-$MISL_ROOT/config/misl.conf}
+  # Where each setting came from, for misl env: environment first.
+  _MISL_FROM_ENV=" $(compgen -e | grep -E '^(MISL_|LFS$|LFS_TGT$)' | grep -vx MISL_ROOT | tr '\n' ' ')"
+  _MISL_FROM_CONF=" "
 
   _misl_load_file "$conf"
 
@@ -156,6 +160,23 @@ misl_load_config() {
   [[ -n ${MISL_MD5SUMS:-} ]] || MISL_MD5SUMS="$MISL_SNAPSHOT/md5sums"
   [[ -n ${MISL_PATCHES:-} ]] || MISL_PATCHES="$MISL_SNAPSHOT/patches"
   [[ -n ${MISL_SOURCES:-} ]] || MISL_SOURCES="$MISL_SNAPSHOT/sources"
+
+  # Optional docs (mirror docs/): own dir, never packages. Fetched only
+  # when MISL_FETCH_DOCS=1 or named in MISL_DOCS.
+  [[ -n ${MISL_DOCS_DIR:-} ]] || MISL_DOCS_DIR="$MISL_SNAPSHOT/docs"
+  MISL_FETCH_DOCS=${MISL_FETCH_DOCS:-0}
+  MISL_DOCS=${MISL_DOCS:-}
+  export MISL_DOCS_DIR MISL_FETCH_DOCS MISL_DOCS
+
+  # Package groups (lib/groups.sh). Base is always selected; these add
+  # groups (all = every group) and name the overlays whose packages=
+  # count before any is applied. Empty = applied/default overlays.
+  MISL_GROUPS=${MISL_GROUPS:-}
+  MISL_TARGET_OVERLAYS=${MISL_TARGET_OVERLAYS:-}
+  export MISL_GROUPS MISL_TARGET_OVERLAYS
+  MISL_IMG_TAG=${MISL_IMG_TAG:-}
+  export MISL_IMG_TAG
+
   export MISL_WGET_LIST MISL_MD5SUMS MISL_PATCHES MISL_SOURCES MISL_SNAPSHOT MISL_MIRROR MISL_FETCH
 
   [[ $MISL_VERSION =~ ^[0-9]+\.[0-9]+$ ]] || \
@@ -177,21 +198,34 @@ misl_load_config() {
   [[ $(basename "$MISL_WGET_LIST") != wget-list.original ]] || die "refusing wget-list.original"
 }
 
-# Site pins. Environment wins over misl.conf. Snapshot / fetch / firmware
-# already have defaults; LFS and MISL_DISK do not.
+# Settings after misl.conf, defaults and the environment (environment
+# wins). list: KEY=value plus where it came from (env, misl.conf,
+# default, unset); export: shell assignments for the set ones.
+# Internal bookkeeping vars are left out; MISL_ROOT_HASH is masked.
+MISL_ENV_INTERNAL=" MISL_ROOT MISL_GROUPS_ALWAYS MISL_GROUPS_DEFINED MISL_GROUPS_CHECKED MISL_GROUPS_SEL MISL_OVERLAY_APPLYING MISL_FW_DEST MISL_FW_STAGE MISL_INITRAMFS_BASE_MODULES MISL_INITRAMFS_FW_STAGE MISL_INITRAMFS_KVER MISL_RESET_PATHS MISL_VER_MAJOR MISL_VER_MINOR MISL_ENV_INTERNAL "
+
+misl_env_keys() {
+  local ex=$MISL_ROOT/config/misl.conf.example
+  {
+    printf '%s\n' LFS LFS_TGT
+    [[ -f $ex ]] && sed -nE 's/^[[:space:]]*#?[[:space:]]*((MISL_|LFS)[A-Z0-9_]*)=.*/\1/p' "$ex"
+    compgen -v MISL_ || true
+  } | LC_ALL=C sort -u | while IFS= read -r k; do
+    [[ -n $k && $MISL_ENV_INTERNAL != *" $k "* ]] && printf '%s\n' "$k"
+  done
+}
+
+misl_env_source() {
+  local k=$1
+  if [[ -z ${!k+x} || -z ${!k} ]]; then printf 'unset'
+  elif [[ ${_MISL_FROM_ENV:-} == *" $k "* ]]; then printf 'env'
+  elif [[ ${_MISL_FROM_CONF:-} == *" $k "* ]]; then printf 'misl.conf'
+  else printf 'default'
+  fi
+}
+
 misl_env() {
-  local mode=${1:-list} key val
-  local keys=(
-    LFS
-    MISL_DISK
-    MISL_PART_BOOT
-    MISL_PART_ROOT
-    MISL_FIRMWARE
-    MISL_MAKEFLAGS
-    MISL_FETCH
-    MISL_SNAPSHOT
-    MISL_MIRROR
-  )
+  local mode=${1:-list} key val src
   case $mode in
     list|""|show) mode=list ;;
     export) mode=export ;;
@@ -200,20 +234,18 @@ misl_env() {
   if [[ -n ${MISL_DISK:-} ]]; then
     misl_disk_resolve_parts
   fi
-  for key in "${keys[@]}"; do
-    if [[ -n ${!key+x} && -n ${!key} ]]; then
-      val=${!key}
-      if [[ $mode == export ]]; then
-        printf 'export %s=%q\n' "$key" "$val"
-      else
-        printf '%s=%s\n' "$key" "$val"
+  [[ $mode == list ]] && printf '# config %s, environment wins\n' "${MISL_CONF:-$MISL_ROOT/config/misl.conf}"
+  while IFS= read -r key; do
+    src=$(misl_env_source "$key")
+    val=${!key-}
+    [[ $key == MISL_ROOT_HASH && -n $val ]] && val='(set, hidden)'
+    if [[ $mode == export ]]; then
+      if [[ $src == unset ]]; then printf '# %s is unset\n' "$key"
+      elif [[ $key == MISL_ROOT_HASH ]]; then printf '# %s is set (hidden)\n' "$key"
+      else printf 'export %s=%q\n' "$key" "$val"
       fi
     else
-      if [[ $mode == export ]]; then
-        printf '# %s is unset\n' "$key"
-      else
-        printf '%s=\n' "$key"
-      fi
+      printf '%-28s %-10s %s\n' "$key" "$src" "$val"
     fi
-  done
+  done < <(misl_env_keys)
 }

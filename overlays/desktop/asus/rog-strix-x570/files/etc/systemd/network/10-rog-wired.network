@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 ALKONTEK <git@alkontek.com>
+# SPDX-License-Identifier: BSD-2-Clause
+# misl overlay desktop/asus/rog-strix-x570: both onboard NICs
+# (I211 = igb, RTL8125 = r8169). Sorts before the base 20-dhcp.network.
+# RequiredForOnline=no: a single plugged port must not stall boot in
+# systemd-networkd-wait-online.
+[Match]
+Driver=igb r8169
+
+[Link]
+RequiredForOnline=no
+
+[Network]
+DHCP=yes
+
+[DHCPv4]
+UseDomains=true
+RouteMetric=100

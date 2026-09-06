@@ -9,7 +9,7 @@
 
 misl_iso_default_out() {
   local img
-  img=${MISL_IMG:-$(misl_img_default_out)}
+  img=${MISL_IMG:-$(misl_img_default_out)} || exit 1
   printf '%s\n' "${img%.img}.iso"
 }
 
@@ -129,7 +129,7 @@ misl_iso_cp_libs_for() {
   local root=$1 dest=$2 elf=$3
   local interp soname guest seen=${4-}
   [[ -f $elf ]] || return 0
-  interp=$(readelf -l "$elf" 2>/dev/null | sed -n 's/.*program interpreter: \([^]]*\).*/\1/p' | head -1)
+  interp=$(readelf -l "$elf" 2>/dev/null | sed -n 's/.*program interpreter: \([^]]*\).*/\1/p' | head -1) || true
   if [[ -n $interp ]]; then
     misl_iso_install_file "$root" "$dest" "$interp" || true
   fi
@@ -147,67 +147,22 @@ misl_iso_cp_libs_for() {
 
 misl_iso_mkinitramfs() {
   local root=$1 dest=$2 kver=$3
-  local ird path real bins modver guest so
+  local ird modver
   ird=$(mktemp -d /var/tmp/misl-iso-initrd.XXXXXX)
   mkdir -p "$ird"/{bin,sbin,usr/bin,usr/sbin,dev,proc,sys,tmp,media/iso,media/squash,media/upper,newroot,lib/modules}
 
-  bins=(
-    /usr/bin/bash /bin/bash /bin/sh
-    /usr/bin/mount /bin/mount
-    /usr/bin/umount /bin/umount
-    /usr/sbin/switch_root /sbin/switch_root
-    /usr/bin/mkdir /bin/mkdir
-    /usr/bin/sleep /bin/sleep
-    /usr/sbin/modprobe /sbin/modprobe
-    /usr/bin/kmod /bin/kmod
-    /usr/sbin/blkid /sbin/blkid
+  # Shared with the installed-system initramfs (lib/initramfs.sh).
+  misl_initrd_userland "$root" "$ird" \
+    /usr/bin/bash /bin/bash /bin/sh \
+    /usr/bin/mount /bin/mount \
+    /usr/bin/umount /bin/umount \
+    /usr/sbin/switch_root /sbin/switch_root \
+    /usr/bin/mkdir /bin/mkdir \
+    /usr/bin/sleep /bin/sleep \
+    /usr/sbin/modprobe /sbin/modprobe \
+    /usr/bin/kmod /bin/kmod \
+    /usr/sbin/blkid /sbin/blkid \
     /usr/bin/ln /bin/ln
-  )
-  for path in "${bins[@]}"; do
-    if [[ -e $root$path || -L $root$path ]]; then
-      misl_iso_install_file "$root" "$ird" "$path" || true
-      real=$(readlink -f "$root$path" 2>/dev/null || true)
-      if [[ -n $real && -f $real ]]; then
-        misl_iso_cp_libs_for "$root" "$ird" "$real"
-      fi
-    fi
-  done
-  mkdir -p "$ird/bin"
-  if [[ -x $ird/usr/bin/bash && ! -e $ird/bin/bash ]]; then
-    ln -sfn /usr/bin/bash "$ird/bin/bash"
-  fi
-  if [[ -e $ird/bin/bash && ! -e $ird/bin/sh ]]; then
-    ln -sfn bash "$ird/bin/sh"
-  elif [[ -e $ird/usr/bin/bash && ! -e $ird/bin/sh ]]; then
-    ln -sfn /usr/bin/bash "$ird/bin/sh"
-  fi
-  [[ -x $ird/bin/bash || -x $ird/usr/bin/bash || -x $ird/bin/sh ]] || \
-    die "no shell in the image — cannot build live initramfs"
-  # LFS is merged-usr: /lib and /lib64 are symlinks to usr/lib. Copying
-  # the interpreter as /lib64/ld-linux-*.so.2 turns lib64 into a directory
-  # with only the loader — libc stays in /usr/lib and PID 1 exits 127.
-  local link tgt
-  for link in /lib /lib64 /usr/lib64; do
-    if [[ -L $root$link ]]; then
-      tgt=$(readlink "$root$link")
-      rm -rf "$ird$link"
-      mkdir -p "$ird$(dirname "$link")"
-      ln -sfn "$tgt" "$ird$link"
-    fi
-  done
-  # The NEEDED walk has been missing libc/readline on this tree. Copy
-  # by name from the guest and refuse to pack without libc.so.6.
-  local so
-  for so in libc.so.6 libreadline.so.8 libhistory.so.8 libncursesw.so.6 \
-            libncurses.so.6 libtinfo.so.6 libdl.so.2 libpthread.so.0 \
-            libmount.so.1 libblkid.so.1 libuuid.so.1 libsystemd.so.0 \
-            libcap.so.2 libcrypt.so.2; do
-    guest=$(misl_iso_find_so "$root" "$so") || continue
-    misl_iso_install_file "$root" "$ird" "$guest" || true
-  done
-  if [[ ! -e $ird/usr/lib/libc.so.6 && ! -e $ird/lib/libc.so.6 && ! -e $ird/lib64/libc.so.6 ]]; then
-    die "initramfs has no libc.so.6 (have: $(ls "$ird/usr/lib" 2>/dev/null | tr '\n' ' ')). guest usr/lib=$(ls "$root/usr/lib"/libc.so* 2>/dev/null | tr '\n' ' ')"
-  fi
 
   modver=$kver
   if [[ ! -d $root/lib/modules/$modver && -d $root/lib/modules/${kver%-misl} ]]; then
@@ -241,7 +196,9 @@ printf 'misl live: init\n'
 
 fail() {
   printf 'misl live: %s\n' "$*"
-  printf 'misl live: init hanging (no shell)\n'
+  cat /proc/partitions 2>/dev/null
+  printf 'misl live: rescue shell (exit to hang)\n'
+  sh -i </dev/console >/dev/console 2>&1
   while :; do sleep 60 2>/dev/null || true; done
 }
 
@@ -254,23 +211,26 @@ modprobe cdrom 2>/dev/null
 modprobe sr_mod 2>/dev/null
 modprobe ahci 2>/dev/null
 modprobe sd_mod 2>/dev/null
-
-for ((i = 0; i < 40; i++)); do
-  [ -b /dev/sr0 ] || [ -b /dev/cdrom ] && break
-  sleep 0.25 2>/dev/null || true
+# misl iso usb: the ISO tree is on partition 1 (FAT32 MISLUSB) of a USB
+# disk, which enumerates seconds after the kernel starts.
+for m in xhci_pci ehci_pci usb_storage uas nvme vfat nls_cp437 nls_iso8859_1; do
+  modprobe "$m" 2>/dev/null
 done
 
 found=
-for dev in /dev/sr0 /dev/sr1 /dev/cdrom /dev/vda /dev/vdb /dev/sda /dev/sdb; do
-  [ -b "$dev" ] || continue
-  mount -o ro "$dev" /media/iso 2>/dev/null || continue
-  if [ -f /media/iso/LiveOS/squashfs.img ]; then
-    found=$dev
-    break
-  fi
-  umount /media/iso 2>/dev/null || true
+for ((i = 0; i < 80 && ${#found} == 0; i++)); do
+  for dev in /dev/sr0 /dev/sr1 /dev/cdrom /dev/vd* /dev/sd* /dev/nvme*n* /dev/mmcblk*; do
+    [ -b "$dev" ] || continue
+    mount -o ro "$dev" /media/iso 2>/dev/null || continue
+    if [ -f /media/iso/LiveOS/squashfs.img ]; then
+      found=$dev
+      break
+    fi
+    umount /media/iso 2>/dev/null || true
+  done
+  [ -n "$found" ] || sleep 0.25 2>/dev/null || true
 done
-[ -n "$found" ] || fail "no LiveOS/squashfs.img on optical/virtio disk"
+[ -n "$found" ] || fail "no LiveOS/squashfs.img on optical, virtio, SATA, NVMe or USB (20s)"
 
 mount -t squashfs -o ro /media/iso/LiveOS/squashfs.img /media/squash \
   || fail "mount squashfs failed"
@@ -321,8 +281,9 @@ misl_iso_from_img() {
     uefi)
       platdir=$(misl_iso_grub_dir x86_64-efi) \
         || die "no GRUB x86_64-efi modules. dnf install grub2-efi-x64-modules mtools"
-      require_cmd mformat mcopy || \
-        die "mtools required for UEFI ISO. dnf install mtools"
+      if ! command -v mformat >/dev/null 2>&1 || ! command -v mcopy >/dev/null 2>&1; then
+        die "mtools (mformat, mcopy) required for UEFI ISO. run: misl doctor install"
+      fi
       ;;
     *) die "internal: firmware $fw" ;;
   esac
@@ -619,7 +580,7 @@ usage: misl iso usb --list
 Pick the disk node from --list (no -partN). Example:
 
   ./misl iso usb --list
-  MISL_FORCE=1 ./misl iso usb /var/tmp/misl-0.3-terminal-uefi.iso \
+  MISL_FORCE=1 ./misl iso usb misl-0.4.iso \
     /dev/disk/by-id/usb-SanDisk_Cruzer_Blade_00016316113023151659-0:0
 
 Wipes the stick. GPT + one FAT32 ESP (MISLUSB). Needs a --uefi ISO.

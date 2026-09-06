@@ -23,13 +23,24 @@ misl_ensure_dir() {
   mkdir -p "$d"
 }
 
+# For pkg_check: run a target binary only when the build installs into
+# / (inside the chroot). With a DESTDIR the binary may not run on the
+# host, so the check is skipped with a note.
+misl_check_run() {
+  if [[ -n $(misl_dest) ]]; then
+    warn "check skipped (DESTDIR install): $*"
+    return 0
+  fi
+  "$@"
+}
+
 misl_make_install() {
   env -u MAKEFLAGS -u MFLAGS make -j1 "$@"
 }
 
 recipe_reset() {
   unset pkg_name pkg_version pkg_tarball pkg_patches pkg_stage pkg_pass pkg_builddir pkg_unpack pkg_requires
-  unset -f pkg_pre_configure pkg_configure pkg_build pkg_install pkg_post_install 2>/dev/null || true
+  unset -f pkg_pre_configure pkg_configure pkg_build pkg_install pkg_post_install pkg_check 2>/dev/null || true
 }
 
 recipe_stamp() {
@@ -174,6 +185,11 @@ recipe_main() {
     if declare -F pkg_build >/dev/null; then pkg_build; fi
     if declare -F pkg_install >/dev/null; then pkg_install; fi
     if declare -F pkg_post_install >/dev/null; then pkg_post_install; fi
+    if declare -F pkg_check >/dev/null && [[ ${MISL_SKIP_CHECK:-0} != 1 ]]; then
+      info "check $pkg_name"
+      pkg_check || die "check failed: $pkg_name"
+      info "check OK $pkg_name"
+    fi
     if declare -F pkg_report >/dev/null; then pkg_report; fi
   ) 2>&1 | tee -a "$log"
   rc=${PIPESTATUS[0]}

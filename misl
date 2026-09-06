@@ -25,18 +25,28 @@ misl_load_config
 . "$MISL_ROOT/lib/recipe.sh"
 # shellcheck source=lib/chroot.sh
 . "$MISL_ROOT/lib/chroot.sh"
+# shellcheck source=lib/docs.sh
+. "$MISL_ROOT/lib/docs.sh"
 # shellcheck source=lib/pkglog.sh
 . "$MISL_ROOT/lib/pkglog.sh"
 # shellcheck source=lib/version.sh
 . "$MISL_ROOT/lib/version.sh"
 # shellcheck source=lib/overlay.sh
 . "$MISL_ROOT/lib/overlay.sh"
+# shellcheck source=lib/groups.sh
+. "$MISL_ROOT/lib/groups.sh"
+# shellcheck source=lib/reset.sh
+. "$MISL_ROOT/lib/reset.sh"
 # shellcheck source=lib/cloud.sh
 . "$MISL_ROOT/lib/cloud.sh"
 # shellcheck source=lib/img.sh
 . "$MISL_ROOT/lib/img.sh"
 # shellcheck source=lib/iso.sh
 . "$MISL_ROOT/lib/iso.sh"
+# shellcheck source=lib/initramfs.sh
+. "$MISL_ROOT/lib/initramfs.sh"
+# shellcheck source=lib/firmware.sh
+. "$MISL_ROOT/lib/firmware.sh"
 
 misl_help() {
   cat <<EOF
@@ -45,12 +55,13 @@ usage: misl <command> [args]
 
   version              print bootstrap version and os-release identity
   bump minor|major|undo|X.Y rewrite VERSION + misl.conf (+ example)
-  env [list|export]    print resolved site pins (export: shell assignments)
+  env [list|export]    every MISL_ setting after misl.conf + environment, and its
+                       source (env, misl.conf, default, unset); export: assignments
   os-release           print the composed /etc/os-release text
   help                 this text
   doctor               host qualification (Fedora 44)
   doctor pkgs          print Fedora 44 dnf install line
-  doctor install       dnf install host deps (root, Fedora)
+  doctor install       dnf install host deps incl. img/iso tools (root, Fedora)
   disk plan            print partition/mount plan (no writes)
   disk apply           gates + plan only (policy A; does not format)
   sources fetch        refresh catalog, create \$MISL_SNAPSHOT, wget wget-list files
@@ -58,31 +69,67 @@ usage: misl <command> [args]
   sources integrate [--reintegrate] <name>
                        host only: refresh catalog, fetch one package, stage
                        (prints chroot build next; does not compile)
-  sources check        verify wget-list files against md5sums
+  sources check        verify wget-list files against md5sums (docs/ optional)
   sources stage        hardlink verified files into \$LFS/usr/src/misl
   sources remote       HEAD-check \$MISL_MIRROR wget-list + md5sums (no download)
   integrate            alias for sources integrate
   prep                 chapter 4 layout + lfs user + env + grant \$LFS
   prep publish         also copy mislinux/ into ~lfs (not the tarball tree)
   build <recipe>       run a stages/* recipe (stage/name if ambiguous)
-  build-stage <stage>  run every packages.manifest row for that stage
+  build-stage <stage>  run every packages.manifest row for that stage whose
+                       group is selected (base always)
+  groups               package groups, their rows, and which are selected:
+                       base + MISL_GROUPS (all = every group) + packages=
+                       of MISL_TARGET_OVERLAYS (else applied/default
+                       overlays) with parents/requires. Also filters
+                       sources fetch/check/stage; lisp (sbcl) is opt-in
   logs [name]          tail recipe log (default: newest under \$LFS/var/lib/misl/logs)
   status               package graph + stamps
+  docs list            optional docs (config/docs.manifest) + state on \$LFS or /
+  docs install|remove <name>
+                       unpack / exactly remove one doc set (ledger in
+                       var/lib/misl/docs); MISL_DOCS= installs at 09-config
   config               print last chapter-9 config report
   config apply         re-run 09-config/systemd-config (MISL_FORCE=1)
-  chroot prep          ch7 owner + virtfs + files + publish scripts into $LFS
-  enter [--net]        chroot into $LFS as root (--net: host DNS for the session)
+  chroot prep          ch7 owner + virtfs + files + publish scripts into \$LFS
+  enter [--net]        chroot into \$LFS as root (--net: host DNS for the session)
   net on|off|status    bind host resolv.conf into \$LFS (host only, not permanent)
   overlay list|status|apply|undo|install
-                       named extras on the base tree (cloud, do, …)
-  cloud apply          overlay apply cloud do (compat)
-  cloud undo           overlay undo do then cloud
+                       named extras on the base tree, by qualified name
+                       (cloud/do, desktop/asus/rog-strix-x570); a unique
+                       leaf (do) works too. apply pulls parents first;
+                       undo refuses a parent while a child is applied.
+                       cloud is one-way: undo refuses, use reset
+  reset                put \$LFS back to the base tree as it was before the
+                       first overlay apply (snapshot saved then): removes
+                       overlay files and firmware, restores /etc, /root and
+                       the overlay state exactly. type yes or MISL_FORCE=1.
+                       Packages and the compiled kernel stay as built
+  reset --info         whether a snapshot exists, its date and size, and
+                       what reset would restore (also: reset status)
+  reset --all [--dry-run] [--lfs-home]
+                       host root: wipe \$LFS and all build state (tools,
+                       stamps, logs, staged sources, boot partition files)
+                       for a clean build. Keeps \$MISL_SNAPSHOT downloads,
+                       built images and the \$LFS mounts. type yes or
+                       MISL_FORCE=1. --lfs-home: also ~lfs/mislinux
+  cloud apply          overlay apply cloud/do (compat; one-way, prints what
+                       it edits)
+  cloud undo           refuses: cloud is one-way (use reset)
   cloud install        chroot: meson-install cloud-init (cloud overlay)
   cloud status         print \$LFS/var/lib/misl/cloud.report
   cloud sanitize       drop machine-id / ssh host keys / cloud-init seed
-  cloud wheels         host: pip download deps into incoming/ (needs DNS)
+  cloud fetch          host: cloud-init + pinned wheels from mirror incoming/
+                       (config/incoming.manifest, md5-checked) into SOURCES
+  initramfs build|list|remove [kver]
+                       /boot/initramfs-7.1.8-misl.img + microcode.img on
+                       \$LFS (host) or / (chroot); MISL_INITRAMFS=0 = off
+  firmware status      staged linux-firmware version + per-overlay files
+  firmware list OVL    what OVL's firmware.list resolves to, and state
   img pack             host root: pack \$LFS into a BIOS GPT .img
   img test             host qemu of that .img (--virtio default, --ide to compare)
+  img/iso names        misl-VER[-TAG].img|.iso in cwd; TAG = applied leaf
+                       overlays (/ -> -) or MISL_IMG_TAG; -o FILE overrides
   iso pack             host root: live ISO from a packed .img (--uefi default)
   iso test             host qemu of that .iso (--uefi default, --bios for SeaBIOS)
   iso test --inspect   mount ISO, unpack initramfs, list /init + libs (no qemu)
@@ -117,6 +164,7 @@ misl_recipe_in_stage() {
 misl_build() {
   local name=${1:-} f
   [[ -n $name ]] || die "usage: misl build <recipe|stage/recipe>"
+  require_lfs_set
   case $name in
     05-cross/*|06-temp/*)
       if [[ ${EUID:-$(id -u)} -eq 0 && ${MISL_AS_LFS:-0} != 1 ]]; then
@@ -170,6 +218,13 @@ misl_build() {
   recipe_reset
   # shellcheck disable=SC1090
   . "$f"
+  local gnotes
+  gnotes=$(awk -v s="${pkg_stage:-}" -v n="${pkg_name:-}" \
+    '$1==s && $2==n { for (i = 6; i <= NF; i++) printf "%s ", $i; exit }' \
+    "$MISL_ROOT/config/packages.manifest")
+  if [[ -n $gnotes ]] && ! misl_group_notes_wanted "$gnotes"; then
+    warn "$pkg_name is group=$(misl_group_label "$gnotes"), not selected; building anyway (explicit build)"
+  fi
   recipe_main
 }
 
@@ -200,9 +255,16 @@ misl_build_stage() {
       fi
       ;;
   esac
+  misl_groups_prepare
+  info "groups: base${MISL_GROUPS_SEL% }"
+  local s v t p notes
   while read -r line; do
     [[ $line == ${stage}\ * ]] || continue
-    name=$(awk "{print \$2}" <<<"$line")
+    read -r s name v t p notes <<<"$line"
+    if ! misl_group_notes_wanted "${notes:-}"; then
+      info "stage $stage skip $name (group $(misl_group_label "${notes:-}") not selected)"
+      continue
+    fi
     info "stage $stage -> $name"
     misl_build "$stage/$name"
   done < "$MISL_ROOT/config/packages.manifest"
@@ -259,8 +321,10 @@ case $cmd in
   prep) misl_prep "${1:-}" ;;
   build) misl_build "${1:-}" ;;
   build-stage) misl_build_stage "${1:-}" ;;
+  groups) misl_groups_list ;;
   integrate) misl_sources_integrate "$@" ;;
   status) misl_status ;;
+  docs) misl_docs "$@" ;;
   config)
     sub=${1:-show}
     case $sub in
@@ -291,8 +355,11 @@ case $cmd in
   enter) misl_enter "$@" ;;
   net) misl_net "$@" ;;
   overlay|overlays) misl_overlay "$@" ;;
+  reset) misl_reset "$@" ;;
   cloud) misl_cloud "$@" ;;
   img|image) misl_img "$@" ;;
   iso) misl_iso "$@" ;;
+  initramfs) misl_initramfs "$@" ;;
+  firmware) misl_firmware "$@" ;;
   *) die "unknown command: $cmd (try: misl help)" ;;
 esac

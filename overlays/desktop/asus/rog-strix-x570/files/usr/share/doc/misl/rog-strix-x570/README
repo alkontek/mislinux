@@ -1,0 +1,8 @@
+misl overlay: desktop/asus/rog-strix-x570 (alpha)
+See docs/hardware/rog-strix-x570.md in the MISL tree for the hardware
+matrix and test checklist.
+  /etc/systemd/network/10-rog-wired.network     igb + r8169, DHCP
+  /etc/systemd/network/25-rog-wireless.network  iwlwifi, DHCP
+  /etc/modprobe.d/misl-rog-strix-x570.conf      commented options
+Wi-Fi: systemctl enable --now wpa_supplicant@<iface> (desktop README).
+No wireless-regdb: the AX200 runs in the world regulatory domain.

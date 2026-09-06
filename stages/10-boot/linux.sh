@@ -25,6 +25,9 @@ pkg_pre_configure() {
 
 # tarball ships scripts/config mode 644; invoking it without sh skips
 # every --enable and you get a defconfig kernel (no squashfs).
+# Always =y (initramfs, early microcode, and a boot without initramfs).
+_MISL_LINUX_BUILTIN="CONFIG_BLK_DEV_INITRD CONFIG_RD_GZIP CONFIG_MICROCODE CONFIG_DEVTMPFS CONFIG_BLK_DEV_SD CONFIG_SATA_AHCI CONFIG_BLK_DEV_NVME CONFIG_EXT4_FS"
+
 _misl_linux_sc() {
   sh scripts/config --file .config "$@"
 }
@@ -34,12 +37,8 @@ _misl_linux_overlay_kernel() {
     misl_overlay_kernel_wanted
     return $?
   fi
-  [[ ${MISL_CLOUD:-0} == 1 ]] && return 0
-  local root=/var/lib/misl
-  if [[ -n ${LFS:-} && ${LFS} != / ]]; then
-    root=${LFS%/}/var/lib/misl
-  fi
-  [[ -f $root/overlays/cloud/applied ]]
+  # Without lib/overlay.sh there are no stamps to read; only the override.
+  [[ ${MISL_CLOUD:-0} == 1 ]]
 }
 
 pkg_configure() {
@@ -100,30 +99,32 @@ pkg_configure() {
   _misl_linux_sc --enable CONFIG_BLK_DEV_SR
   _misl_linux_sc --enable CONFIG_ATA
   _misl_linux_sc --enable CONFIG_VIRTIO_SCSI
+  # Installed-system initramfs + early microcode. Storage and root fs stay
+  # built in so the "(no initramfs)" GRUB entry still boots.
+  local b
+  for b in $_MISL_LINUX_BUILTIN; do
+    _misl_linux_sc --enable "$b"
+  done
 
   make olddefconfig
 
-  # Cloud VPS: virtio + 8250 from overlays/cloud/kernel.list
+  # kernel.list of every applied overlay, nested too (cloud, cloud/do,
+  # desktop/asus/...). Parse, apply and verify live in lib/overlay.sh.
   if _misl_linux_overlay_kernel; then
-    local cfg klist n root
-    if [[ ${LFS:-} == / || -z ${LFS:-} ]]; then
-      root=/var/lib/misl
-    else
-      root=${LFS%/}/var/lib/misl
-    fi
+    declare -F misl_kernel_list_requests >/dev/null 2>&1 || \
+      die "lib/overlay.sh not loaded (misl_kernel_list_requests)"
+    local reqs
     # No < <() — chroot often has no /dev/fd (line used to die: /dev/fd/63).
-    for klist in "${MISL_ROOT:-.}"/overlays/*/kernel.list; do
-      [[ -f $klist ]] || continue
-      n=$(basename "$(dirname "$klist")")
-      [[ -f $root/overlays/$n/applied ]] || continue
-      while IFS= read -r cfg || [[ -n $cfg ]]; do
-        [[ $cfg =~ ^CONFIG_ ]] || continue
-        _misl_linux_sc --enable "$cfg"
-      done <"$klist"
-    done
+    reqs=$(misl_kernel_list_requests) || die "kernel.list: parse failed"
+    misl_kernel_list_apply _misl_linux_sc <<<"$reqs"
     make olddefconfig
+    # Last olddefconfig: every requested value must have stuck.
+    misl_kernel_list_verify .config <<<"$reqs"
   fi
 
+  for b in $_MISL_LINUX_BUILTIN; do
+    grep -qx "$b=y" .config || die "$b is not y after olddefconfig (initramfs/boot fallback)"
+  done
   grep -q '^CONFIG_SQUASHFS=y' .config || \
     die "CONFIG_SQUASHFS is not y after olddefconfig ($(grep SQUASHFS .config | head -3))"
 }
@@ -151,4 +152,6 @@ pkg_install() {
   ln -sfv "vmlinuz-${kver}" "${dest}/boot/vmlinuz"
   grep -q '^CONFIG_SQUASHFS=y' "${dest}/boot/config-${kver}" || \
     die "installed ${dest}/boot/config-${kver} has no CONFIG_SQUASHFS=y"
+  # Rebuilt kernel = new modules: regenerate (10-boot/grub does it too).
+  misl_initramfs_auto "$dest" "$kver"
 }

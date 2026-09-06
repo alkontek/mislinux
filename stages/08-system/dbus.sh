@@ -17,7 +17,7 @@ pkg_pre_configure() {
 }
 
 pkg_configure() {
-  meson setup --prefix=/usr --buildtype=release --wrap-mode=nofallback ..
+  meson setup --prefix=/usr --libdir=/usr/lib --buildtype=release --wrap-mode=nofallback ..
 }
 
 pkg_build() { ninja; }

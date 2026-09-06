@@ -1,0 +1,63 @@
+# SPDX-FileCopyrightText: 2026 ALKONTEK <git@alkontek.com>
+# SPDX-License-Identifier: BSD-2-Clause
+
+# ASUS ROG Strix X570 (AMD Ryzen, I211 + RTL8125, AX200, ALC1220A).
+# Verified after olddefconfig by 10-boot/linux. Names checked against
+# mainline Kconfig; lines marked (?) could not be confirmed for 7.1.
+
+# --- Ethernet: Intel I211 (igb), Realtek RTL8125 2.5G (r8169)
+NET_VENDOR_INTEL=y
+IGB=m
+NET_VENDOR_REALTEK=y
+R8169=m
+REALTEK_PHY=m
+
+# --- Wi-Fi: Intel AX200 (iwlwifi + iwlmvm)
+WLAN=y
+WLAN_VENDOR_INTEL=y
+CFG80211=m
+MAC80211=m
+IWLWIFI=m
+IWLMVM=m
+
+# --- Bluetooth: AX200 USB part (btusb + btintel)
+BT=m
+BT_HCIBTUSB=m
+# BT_INTEL is selected by BT_HCIBTUSB (not set directly).
+# bluez 5.87 profiles (08-system/bluez, group=hw):
+#   RFCOMM: serial/HFP/SPP sockets; BNEP: network (PAN) plugin;
+#   HIDP: classic BT keyboards/mice; UHID: BLE HID (HoG) via /dev/uhid;
+#   INPUT_UINPUT: AVRCP media keys as an input device.
+BT_RFCOMM=m
+BT_BNEP=m
+BT_HIDP=m
+UHID=m
+INPUT_UINPUT=m
+
+# --- Audio: Realtek ALC1220A on HDA Intel
+SND_HDA_INTEL=m
+# (?) 6.17+ split sound/pci/hda into sound/hda/codecs; check the name
+# still exists in 7.1 (grep -r 'config SND_HDA_CODEC_REALTEK' sound/).
+SND_HDA_CODEC_REALTEK=m
+
+# --- Firmware loading of linux-firmware .xz/.zst
+FW_LOADER_COMPRESS=y
+FW_LOADER_COMPRESS_XZ=y
+FW_LOADER_COMPRESS_ZSTD=y
+
+# --- AMD platform
+CPU_SUP_AMD=y
+# MICROCODE_AMD was folded into MICROCODE (=y on x86 with CPU_SUP_AMD)
+# in 6.7; not listed. AMD ucode loading is the initramfs's job.
+MICROCODE=y
+X86_AMD_PLATFORM_DEVICE=y
+AMD_IOMMU=y
+PINCTRL_AMD=y
+SENSORS_K10TEMP=m
+# Optional AMD chipset watchdog:
+SP5100_TCO=m
+
+# --- GPU: none on purpose. Add one block, then rebuild 10-boot/linux:
+#   AMD:    DRM=y DRM_AMDGPU=m  (+ firmware.list: amdgpu/<chip>_*.bin)
+#   NVIDIA: DRM_NOUVEAU=m (+ firmware.list: nvidia/<chip>/)
+#           or the vendor module, built out of tree (not in MISL).

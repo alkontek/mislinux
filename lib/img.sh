@@ -4,16 +4,38 @@
 # shellcheck shell=bash
 
 # Pack $LFS into a BIOS GPT .img. Host root, not chroot.
-misl_img_default_out() {
-  local dir tag=img root
-  dir=$(pwd)
-  root=${LFS:-}/var/lib/misl/overlays
-  if [[ -f $root/do/applied ]]; then
-    tag=do
-  elif [[ -f $root/cloud/applied ]]; then
-    tag=cloud
+# Image suffix: MISL_IMG_TAG if non-empty, else the applied leaf
+# overlays (applied, no applied child), / -> -, sorted, joined with -.
+# The base overlay terminal alone gives no suffix.
+misl_img_tag() {
+  local q c leaf tags=()
+  if [[ -n ${MISL_IMG_TAG:-} ]]; then
+    [[ $MISL_IMG_TAG =~ ^[A-Za-z0-9._+-]+$ ]] || die "MISL_IMG_TAG=$MISL_IMG_TAG: use letters, digits, . _ + - only"
+    printf '%s\n' "$MISL_IMG_TAG"
+    return 0
   fi
-  printf '%s/misl-%s-%s.img\n' "$dir" "${MISL_VERSION:-0.3}" "$tag"
+  local all applied=()
+  all=$(misl_overlay_all)
+  while IFS= read -r q; do
+    [[ -n $q ]] || continue
+    misl_overlay_applied "$q" 2>/dev/null && applied+=("$q")
+  done <<<"$all"
+  for q in "${applied[@]}"; do
+    [[ $q == terminal ]] && continue
+    leaf=1
+    for c in "${applied[@]}"; do
+      [[ $c == "$q"/* ]] && { leaf=0; break; }
+    done
+    (( leaf )) && tags+=("${q//\//-}")
+  done
+  (( ${#tags[@]} )) || return 0
+  printf '%s\n' "${tags[@]}" | LC_ALL=C sort | paste -sd- -
+}
+
+misl_img_default_out() {
+  local tag
+  tag=$(misl_img_tag) || exit 1
+  printf '%s/misl-%s%s.img\n' "$(pwd)" "${MISL_VERSION:-0.4}" "${tag:+-$tag}"
 }
 
 misl_img_assert_host() {
@@ -104,6 +126,7 @@ misl_img_from_tree() {
     --exclude '/run/**' --exclude '/tmp/**' --exclude '/boot/efi/**' \
     --exclude '/tools/**' --exclude '/usr/src/**' \
     --exclude '/var/tmp/**' --exclude '/var/lib/misl/logs/**' \
+    --exclude '/var/lib/misl/reset/**' \
     --exclude '/boot/grub/grub.cfg' \
     "$LFS"/ "$mnt"/ || die "rsync failed"
 
@@ -121,7 +144,7 @@ misl_img_from_tree() {
   [[ -n $root_uuid && -n $boot_uuid && -n $root_partuuid ]] || \
     die "no UUID/PARTUUID on image partitions $p2 $p3"
   kver=7.1.8-misl
-  # No initramfs: kernel root=UUID= is not ext4 UUID. Use GPT PARTUUID.
+  # GPT PARTUUID works with and without the initramfs (fallback entry).
   cmdline="root=PARTUUID=${root_partuuid} ro rootfstype=ext4 console=ttyS0,115200n8 console=tty0"
   info "image fs UUID root=$root_uuid boot=$boot_uuid PARTUUID=$root_partuuid"
 
@@ -133,6 +156,15 @@ misl_img_from_tree() {
       warn "no vmlinuz-$kver on the image — 10-boot/linux first"
     fi
   fi
+  if misl_initramfs_enabled && [[ ! -f $LFS/boot/initramfs-$kver.img ]]; then
+    warn "no initramfs-$kver.img in \$LFS/boot: image boots without it (./misl initramfs build, or MISL_INITRAMFS=0)"
+  fi
+  local f
+  for f in initramfs-$kver.img microcode.img; do
+    if [[ -f $LFS/boot/$f && ! -f $mnt/boot/$f ]]; then
+      cp -a "$LFS/boot/$f" "$mnt/boot/"
+    fi
+  done
 
   mount --bind /dev "$mnt/dev"
   mount --bind /proc "$mnt/proc"
@@ -146,7 +178,7 @@ misl_img_from_tree() {
   # Write fstab + grub.cfg AFTER grub-install. --recheck may regenerate
   # grub.cfg from the live $LFS UUID in /etc/default/grub.
   {
-    printf '%s\n' '# /etc/fstab — MIS Linux DigitalOcean image'
+    printf '%s\n' '# /etc/fstab — MIS Linux image'
     printf 'UUID=%s  /      ext4  defaults  1 1\n' "$root_uuid"
     printf 'UUID=%s  /boot  ext4  defaults  1 2\n' "$boot_uuid"
     printf 'proc  /proc  proc  nosuid,noexec,nodev  0 0\n'
@@ -162,9 +194,9 @@ misl_img_from_tree() {
     printf '%s\n' 'terminal_input serial console'
     printf '%s\n' 'terminal_output serial console'
     printf 'search --no-floppy --fs-uuid --set=root %s\n' "$boot_uuid"
-    printf 'menuentry "%s" {\n' "${MISL_PRETTY_NAME:-MIS Linux $MISL_VERSION}"
-    printf '        linux /vmlinuz-%s %s\n' "$kver" "$cmdline"
-    printf '}\n'
+    # /boot is its own partition here: paths have no /boot prefix.
+    misl_initramfs_grub_entries "$LFS" "" "$kver" \
+      "${MISL_PRETTY_NAME:-MIS Linux $MISL_VERSION}" "$cmdline" "$cmdline"
   } >"$mnt/boot/grub/grub.cfg"
 
   umount "$mnt/sys" "$mnt/proc" "$mnt/dev" "$mnt/boot" "$mnt"
@@ -217,13 +249,14 @@ misl_img_pack() {
     gzip -f -k "$out"
     info "compressed $out.gz"
   fi
-  ls -lh "$out" ${out}.gz 2>/dev/null || ls -lh "$out"
+  if [[ -e $out.gz ]]; then ls -lh "$out" "$out.gz"; else ls -lh "$out"; fi
+  misl_overlay_applied cloud/do 2>/dev/null || return 0
   cat <<EOF
 
 DigitalOcean Custom Images:
-  raw .img (this file), optional gzip. BIOS + ext4 + cloud-init + sshd.
-  Control panel → Backups & Snapshots → Custom Images → upload
-  Create Droplet from the image and attach an SSH key.
+  raw .img or .img.gz, BIOS + ext4 + cloud-init + sshd.
+  Custom Images → Import via URL (the upload picker does not take .img.gz),
+  distribution Other. Create a Droplet from the image with an SSH key.
 
 EOF
 }

@@ -4,6 +4,8 @@
 # shellcheck shell=bash
 # LFS 13.1-systemd §8.77 Systemd-261.2
 # Needs meson + ninja in PATH (chapter 8 recipes).
+# sshdconfdir=no: no sshd_config.d/20-systemd-userdb.conf (userdbctl
+# AuthorizedKeysCommand) on any tree; MISL sshd has no userdb users.
 pkg_name=systemd
 pkg_version=261.2
 pkg_tarball=systemd-261.2.tar.gz
@@ -32,6 +34,7 @@ pkg_configure() {
     -D man=disabled \
     -D mode=release \
     -D pamconfdir=no \
+    -D sshdconfdir=no \
     -D dev-kvm-mode=0660 \
     -D nobody-group=nogroup \
     -D sysupdate=disabled \
