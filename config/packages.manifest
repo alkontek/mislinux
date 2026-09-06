@@ -116,6 +116,14 @@
 08-system e2fsprogs 1.47.4 e2fsprogs-1.47.4.tar.gz - implemented=0.2
 08-system openssh 10.5p1 openssh-10.5p1.tar.gz - implemented=0.3
 08-system nano 9.2 nano-9.2.tar.xz - implemented=0.3
+08-system curl 8.22.0 curl-8.22.0.tar.xz - implemented=0.4
+08-system htop 3.5.3 htop-3.5.3.tar.xz - implemented=0.4
+08-system jq 1.8.2 jq-1.8.2.tar.gz - implemented=0.4
+08-system lsof 4.99.6 lsof-4.99.6.tar.gz - implemented=0.4
+08-system rsync 3.5.0 rsync-3.5.0.tar.gz - implemented=0.4
+08-system strace 7.2 strace-7.2.tar.xz - implemented=0.4
+08-system tmux 3.7c tmux-3.7c.tar.gz - implemented=0.4
+08-system wget-1.25 wget-1.25.0.tar.gz - implemented=0.4
 09-config systemd-config 261.2 - - implemented=0.2
 09-config usr-bin 0.2 - - implemented=0.2 overlay=usr/bin
 10-boot linux 7.1.8 linux-7.1.8.tar.xz - implemented=0.2
