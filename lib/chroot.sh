@@ -64,11 +64,9 @@ misl_kernfs_mount() {
 misl_chroot_owner() {
   require_root
   require_lfs_set
-  chown --from lfs -R root:root "$LFS"/{usr,var,etc,tools} 2>/dev/null || \
-    chown -R root:root "$LFS"/{usr,var,etc,tools}
-  if [[ -e $LFS/lib64 ]]; then
-    chown --from lfs -R root:root "$LFS/lib64" 2>/dev/null || \
-      chown -R root:root "$LFS/lib64"
+  misl_chown_tree root:root --from lfs "$LFS"/{usr,var,etc,tools}
+  if [[ -e $LFS/lib64 && ! -L $LFS/lib64 ]]; then
+    misl_chown_tree root:root --from lfs "$LFS/lib64"
   fi
 }
 
@@ -317,6 +315,10 @@ misl_enter() {
   misl_kernfs_mount
   misl_bind_bootstrap
   [[ $with_net == 1 ]] && misl_net_on
+  # Group selection rides in only when set; else chroot misl.conf wins.
+  local genv=()
+  [[ -n ${MISL_GROUPS:-} ]] && genv+=("MISL_GROUPS=$MISL_GROUPS")
+  [[ -n ${MISL_TARGET_OVERLAYS:-} ]] && genv+=("MISL_TARGET_OVERLAYS=$MISL_TARGET_OVERLAYS")
   info "entering $LFS (LFS=/ inside). scripts are $MISL_ROOT bound at /usr/src/misl/mislinux"
   exec chroot "$LFS" /usr/bin/env -i \
     HOME=/root \
@@ -327,5 +329,6 @@ misl_enter() {
     LFS=/ \
     MAKEFLAGS="${MISL_MAKEFLAGS:--j2}" \
     MISL_MAKEFLAGS="${MISL_MAKEFLAGS:--j2}" \
+    "${genv[@]}" \
     /bin/bash --login +h
 }

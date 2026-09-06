@@ -12,7 +12,7 @@ pkg_pass=1
 pkg_builddir=in-tree
 pkg_configure() {
   ./configure --prefix=/usr --sysconfdir=/etc --with-openssl --with-xz --with-zstd --with-zlib --disable-manpages || \
-  meson setup build --prefix=/usr --buildtype=release -D manpages=false
+  meson setup build --prefix=/usr --libdir=/usr/lib --buildtype=release -D manpages=false
 }
 pkg_build() {
   if [[ -d build && -f build/build.ninja ]]; then

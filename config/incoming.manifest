@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: 2026 ALKONTEK <git@alkontek.com>
+# SPDX-License-Identifier: BSD-2-Clause
+#
+# Mirror incoming/: external build and install inputs that are not built
+# as distro packages (no packages.manifest row, no recipe): upstream
+# release tarballs, a binary bootstrap compiler, Python wheels. Every
+# file misl uses from incoming/ is listed here; nothing is fetched from
+# anywhere else (no PyPI).
+# Fetched by `misl sources fetch` when the group is selected
+# (lib/groups.sh) and by `misl cloud fetch` (cloud rows).
+# Columns: group name version file md5 notes
+#   file   path under incoming/ (wheels live in incoming/wheels/)
+#   group  one declared group (lib/groups.sh)
+#   md5    md5sums wins when the mirror lists the file; else md5env=VAR
+#          when set; else this column; `-` = not known yet (warns)
+#   notes  kind=wheel|tarball|binary, md5env=VAR
+# Wheels: cp314 manylinux x86_64 where the package ships compiled code
+# and has one, else py3-none-any. Installed by `misl cloud install` with
+# pip --no-index from this exact file list.
+
+# group name               version    file                                                                                                             md5                              notes
+lisp    sbcl-bootstrap     2.6.10     sbcl-2.6.10-x86-64-linux-binary.tar.bz2                                                                          501733c5aa52abc4bf468e308c3daff4 kind=binary md5env=MISL_SBCL_BOOTSTRAP_MD5
+cloud   cloud-init         26.2       cloud-init-26.2.tar.gz                                                                                           aacf7e93731a4d2ce137b67fb271c1cd kind=tarball md5env=MISL_CLOUD_INIT_MD5
+cloud   PyYAML             6.0.3      wheels/pyyaml-6.0.3-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl             97f0dcb70cfa36b342945cde67d47c9c kind=wheel
+cloud   requests           2.34.2     wheels/requests-2.34.2-py3-none-any.whl                                                                          cc4287951c320ff794e5e183c7a91f85 kind=wheel
+cloud   urllib3            2.8.0      wheels/urllib3-2.8.0-py3-none-any.whl                                                                            e6e9d40fb009e4a52290209506d8d4d4 kind=wheel
+cloud   idna               3.20       wheels/idna-3.20-py3-none-any.whl                                                                                9481f70139501176693e1833735309ea kind=wheel
+cloud   charset-normalizer 3.5.2      wheels/charset_normalizer-3.5.2-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl 95c77d47cd605d4b88765fdaadc081f7 kind=wheel
+cloud   certifi            2026.10.23 wheels/certifi-2026.10.23-py3-none-any.whl                                                                       f8e2ea95de0d04faf08b80e3535fa148 kind=wheel
+cloud   configobj          5.0.9      wheels/configobj-5.0.9-py2.py3-none-any.whl                                                                      24a600b1d5c578899bbf5da4d1452147 kind=wheel
+cloud   jsonpatch          1.38       wheels/jsonpatch-1.38-py3-none-any.whl                                                                           b0f7916d862a545f6ca7134f21d60f3f kind=wheel
+cloud   jsonpointer        3.6        wheels/jsonpointer-3.6-py3-none-any.whl                                                                          b29d430852a4b7990a35431a8ca24599 kind=wheel
+cloud   jsonschema         4.17.3     wheels/jsonschema-4.17.3-py3-none-any.whl                                                                        19b08f13a7308e0c8d663a62314cd79f kind=wheel
+cloud   attrs              26.1.0     wheels/attrs-26.1.0-py3-none-any.whl                                                                             643aa39724d0b47daf07adb1ba79027f kind=wheel
+cloud   pyrsistent         0.20.0     wheels/pyrsistent-0.20.0-py3-none-any.whl                                                                        2936d62f94b0e025bbdd11296c05b306 kind=wheel
+cloud   oauthlib           4.0.0      wheels/oauthlib-4.0.0-py3-none-any.whl                                                                           497eee52fe37e39644e4092ab75022f2 kind=wheel

@@ -15,17 +15,12 @@ pkg_configure() {
 }
 pkg_build() { make ${MISL_MAKEFLAGS:-}; }
 pkg_install() {
-  local dest docs
+  local dest
   dest=$(misl_dest)
   if [[ -n $dest ]]; then
     make DESTDIR="$dest" install
   else
     make install
   fi
-  docs=$(recipe_find_tarball python-3.14.7-docs-html.tar.bz2 || true)
-  if [[ -n ${docs:-} ]]; then
-    install -v -dm755 "${dest}/usr/share/doc/python-3.14.7/html"
-    tar --strip-components=1 --no-same-owner --no-same-permissions \
-      -C "${dest}/usr/share/doc/python-3.14.7/html" -xf "$docs"
-  fi
+  # HTML docs: optional, `misl docs install python-docs` (MISL_DOCS).
 }

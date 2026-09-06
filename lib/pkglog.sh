@@ -3,6 +3,18 @@
 
 # shellcheck shell=bash
 
+# A row is "ready" only when stages/<stage> holds a non-stub recipe.
+misl_status_has_recipe() {
+  local stage=$1 name=$2 f
+  if declare -F misl_recipe_in_stage >/dev/null; then
+    f=$(misl_recipe_in_stage "$stage" "$name") || return 1
+  else
+    f=$MISL_ROOT/stages/$stage/${name}.sh
+    [[ -f $f ]] || return 1
+  fi
+  ! grep -q 'not implemented' "$f"
+}
+
 misl_status() {
   local man=$MISL_ROOT/config/packages.manifest
   local stage name ver tarball patches notes pass state stamp
@@ -21,8 +33,12 @@ misl_status() {
       state=done
     elif [[ -n ${LFS:-} && -f $LFS/var/lib/misl/integrated/$name ]]; then
       state=integrated
-    elif [[ $notes == *implemented=* ]]; then
+    elif [[ $notes == *blocked=* ]]; then
+      state=blocked
+    elif [[ $notes == *implemented=* ]] && misl_status_has_recipe "$stage" "$name"; then
       state=ready
+    elif [[ $notes == *implemented=* ]]; then
+      state=norecipe
     else
       state=stub
     fi

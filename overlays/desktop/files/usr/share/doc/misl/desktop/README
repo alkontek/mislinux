@@ -1,0 +1,18 @@
+misl overlay: desktop (alpha)
+
+Base (from 09-config, not this overlay):
+  /etc/systemd/network/20-dhcp.network  wired DHCP on en* eth*
+  systemd-networkd, systemd-resolved, systemd-timesyncd enabled
+  /etc/vconsole.conf  KEYMAP=$MISL_KEYMAP (default us)
+
+This overlay adds:
+  /etc/systemd/network/30-wireless.network  DHCP on wl*, metric 600
+  /etc/systemd/system/timers.target.wants/fstrim.timer  weekly TRIM (enabled by apply.sh)
+
+Wi-Fi:
+  install -m600 wpa_supplicant-IFACE.conf.example \
+    /etc/wpa_supplicant/wpa_supplicant-$(ls /sys/class/net | grep ^wl).conf
+  edit ssid/psk, then systemctl enable --now wpa_supplicant@<iface>
+  networkctl status <iface>; resolvectl status
+
+Undo: misl overlay undo desktop (children first) removes exactly these.

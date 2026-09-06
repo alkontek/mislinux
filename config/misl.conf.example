@@ -13,12 +13,12 @@
 #   MISL_VERSION_CODENAME       = empty until a named release
 #   MISL_DIST_*                 = product goal; applied when
 #                                 MISL_VERSION == MISL_DIST_VERSION
-MISL_VERSION=0.3
+MISL_VERSION=0.4
 MISL_NAME="MIS Linux"
 MISL_ID=misl
-MISL_VERSION_ID=0.3
+MISL_VERSION_ID=0.4
 MISL_VERSION_CODENAME=
-MISL_PRETTY_NAME="MIS Linux 0.3"
+MISL_PRETTY_NAME="MIS Linux 0.4"
 MISL_VARIANT="systemd"
 MISL_VARIANT_ID=systemd
 MISL_DIST_VERSION=1.0
@@ -55,8 +55,29 @@ MISL_PATCHES=
 MISL_SOURCES=
 MISL_FETCH=1
 
+# Optional docs (mirror docs/, config/docs.manifest). Off by default.
+# MISL_DOCS="python-docs tcl-docs" fetches + stages those and installs
+# them at the end of 09-config. MISL_FETCH_DOCS=1 fetches all docs.
+# MISL_DOCS_DIR defaults to $MISL_SNAPSHOT/docs.
+MISL_DOCS=
+MISL_FETCH_DOCS=0
+
+# Package groups: one group= per packages.manifest row (base, hw, wifi,
+# bluetooth, lisp, cloud; base always). Selected = base + MISL_GROUPS + packages= of the target overlays
+# (with parents/requires). MISL_TARGET_OVERLAYS names the image you are
+# building, before any overlay is applied; empty = applied + default.
+#   ROG board:  MISL_TARGET_OVERLAYS=desktop/asus/rog-strix-x570  (hw wifi bluetooth)
+#   SBCL too:   MISL_GROUPS=lisp     everything: MISL_GROUPS=all
+# incoming/ files carry their md5 in config/incoming.manifest. Set
+# MISL_CLOUD_INIT_MD5 while the cloud-init tarball md5 there is -.
+# MISL_SBCL_BOOTSTRAP_MD5 overrides the SBCL binary md5.
+MISL_GROUPS=
+MISL_TARGET_OVERLAYS=
+MISL_SBCL_BOOTSTRAP_MD5=
+MISL_CLOUD_INIT_MD5=
+
 # Chapter 9 (no prompts). Root hash from: openssl passwd -6
-MISL_HOSTNAME=misl
+MISL_HOSTNAME=jeanluc
 MISL_LANG=C.UTF-8
 MISL_TIMEZONE=UTC
 MISL_KEYMAP=us
@@ -67,3 +88,23 @@ MISL_KEYMAP=us
 MISL_MAKEFLAGS=
 # Cross triplet stays LFS-shaped until 0.8 identity work.
 LFS_TGT=x86_64-lfs-linux-gnu
+
+# 10-boot/linux checks every overlay kernel.list value after the last
+# olddefconfig and fails on one that did not stick. 1 = warn only.
+# MISL_KERNEL_LIST_LAX=0
+# Installed-system initramfs + early microcode (docs/operator-0.4.md).
+# MISL_INITRAMFS=0 writes none and a single no-initrd GRUB entry.
+MISL_INITRAMFS=1
+# Extra modules for every build (overlays use initramfs.list).
+MISL_INITRAMFS_MODULES=
+
+# Overlay firmware.list entries missing from the staged linux-firmware:
+# 0 = apply fails naming file:line; 1 = warn and skip. Never fetched.
+MISL_FIRMWARE_LAX=0
+
+# img/iso default name: misl-<version>[-<tag>].img|.iso in the current dir.
+# Empty = auto: no tag on a base (terminal) tree; else each applied leaf
+# overlay with / -> -, sorted, joined with - (cloud/do -> cloud-do,
+# desktop/asus/rog-strix-x570 -> desktop-asus-rog-strix-x570).
+# Non-empty = that tag (letters, digits, . _ + -). -o FILE beats both.
+MISL_IMG_TAG=

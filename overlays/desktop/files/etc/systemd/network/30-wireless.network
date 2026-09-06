@@ -1,0 +1,18 @@
+# SPDX-FileCopyrightText: 2026 ALKONTEK <git@alkontek.com>
+# SPDX-License-Identifier: BSD-2-Clause
+# misl overlay desktop. Any wireless link (wl*): DHCP once
+# wpa_supplicant@<iface>.service has associated. See
+# /usr/share/doc/misl/desktop/README.
+[Match]
+Name=wl*
+
+[Network]
+DHCP=yes
+IgnoreCarrierLoss=3s
+
+[DHCPv4]
+UseDomains=true
+RouteMetric=600
+
+[IPv6AcceptRA]
+RouteMetric=600
