@@ -28,5 +28,6 @@ pkg_build() {
 }
 
 pkg_install() {
-  make install
+  misl_ensure_dir "$LFS/tools/bin"
+  misl_make_install install
 }

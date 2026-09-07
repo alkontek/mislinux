@@ -55,6 +55,6 @@ pkg_configure() {
 pkg_build() { make ${MISL_MAKEFLAGS:-}; }
 
 pkg_install() {
-  make DESTDIR="$LFS" install
+  misl_make_install DESTDIR="$LFS" install
   ln -sfv gcc "$LFS/usr/bin/cc"
 }

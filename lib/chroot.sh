@@ -4,7 +4,14 @@
 # shellcheck shell=bash
 # Chapter 7: ownership, virtfs, essential files, enter.
 
+# MISL enter sets LFS=/. That is the contract, not / vs /proc/1/root —
+# a Fedora/DO host can have those inodes differ and is still the host.
 misl_in_chroot() {
+  case ${LFS:-} in
+    /) return 0 ;;
+    '') ;;
+    *) return 1 ;;
+  esac
   [[ -e /proc/1/root ]] || return 1
   local a b
   a=$(stat -c %d:%i / 2>/dev/null || true)
@@ -31,7 +38,12 @@ misl_kernfs_mount() {
     mkdir -pv "$LFS/dev/pts"
     mount -vt devpts devpts -o gid=5,mode=0620 "$LFS/dev/pts"
   fi
-  mountpoint -q "$LFS/proc" || mount -vt proc proc "$LFS/proc"
+  if ! mountpoint -q "$LFS/proc" || [[ ! -r $LFS/proc/self/maps ]]; then
+    mountpoint -q "$LFS/proc" && umount "$LFS/proc" || true
+    mount -vt proc proc "$LFS/proc"
+  fi
+  [[ -r $LFS/proc/self/maps ]] || \
+    die "no $LFS/proc/self/maps after mount — objtool will fail the kernel build"
   mountpoint -q "$LFS/sys"  || mount -vt sysfs sysfs "$LFS/sys"
   mountpoint -q "$LFS/run"  || mount -vt tmpfs tmpfs "$LFS/run"
   if [[ ${MISL_FIRMWARE:-efi} == efi ]]; then
@@ -192,27 +204,119 @@ misl_chroot_prep() {
   info "chroot ready. as root: misl enter"
 }
 
+# $LFS/usr/src/misl/mislinux is either a chroot-prep rsync snapshot or a
+# bind of $MISL_ROOT. enter must use the host tree. A leftover bind or
+# the snapshot alone means the chroot builds a different linux.sh.
 misl_bind_bootstrap() {
   require_root
   require_lfs_set
-  local dest=$LFS/usr/src/misl/mislinux
+  local dest=$LFS/usr/src/misl/mislinux src a b
+  src=$(readlink -f "$MISL_ROOT")
   mkdir -pv "$dest"
-  if mountpoint -q "$dest"; then
-    info "bootstrap already bound at $dest"
+  a=$(stat -c %d:%i "$src/misl" 2>/dev/null || true)
+  b=$(stat -c %d:%i "$dest/misl" 2>/dev/null || true)
+  if mountpoint -q "$dest" && [[ -n $a && $a == "$b" ]]; then
+    info "bootstrap bound $src -> $dest"
     return 0
   fi
-  # Live host tree, not a stale chroot-prep snapshot.
-  mount --bind "$MISL_ROOT" "$dest"
-  info "bound $MISL_ROOT -> $dest"
+  if mountpoint -q "$dest"; then
+    warn "stale bootstrap bind at $dest (not $src); remounting"
+    umount "$dest" || die "cannot umount stale $dest"
+  elif [[ -n $a && -n $b && $a != "$b" ]]; then
+    warn "$dest is a chroot-prep snapshot; binding $src over it"
+  fi
+  mount --bind "$src" "$dest"
+  b=$(stat -c %d:%i "$dest/misl" 2>/dev/null || true)
+  [[ -n $a && $a == "$b" ]] || \
+    die "bind $src -> $dest did not take (host $(stat -c %i "$src/misl") chroot $(stat -c %i "$dest/misl"))"
+  info "bound $src -> $dest"
+}
+
+# Host DNS into the chroot for the session. The chroot already shares the
+# host netns; without this, $LFS/etc/resolv.conf often points at a resolved
+# stub under $LFS/run that does not exist.
+misl_net_on() {
+  require_root
+  require_lfs_set
+  [[ ${LFS:-} != / ]] || die "net on runs on the Fedora host. exit the chroot first"
+  local src dst
+  src=$(readlink -f /etc/resolv.conf 2>/dev/null || true)
+  [[ -n $src && -f $src ]] || die "host has no resolv.conf"
+  dst=$LFS/etc/resolv.conf
+  mkdir -p "$LFS/etc" "$LFS/var/lib/misl"
+  if mountpoint -q "$dst" 2>/dev/null; then
+    info "chroot DNS already on ($src -> $dst)"
+    return 0
+  fi
+  if [[ -L $dst || ! -f $dst ]]; then
+    rm -f "$dst"
+    : >"$dst"
+  fi
+  mount --bind "$src" "$dst"
+  printf '%s\n' "$src" >"$LFS/var/lib/misl/chroot-net"
+  info "chroot DNS on (host $src bound over /etc/resolv.conf)"
+}
+
+misl_net_off() {
+  require_root
+  require_lfs_set
+  [[ ${LFS:-} != / ]] || die "net off runs on the Fedora host. exit the chroot first"
+  local dst=$LFS/etc/resolv.conf
+  if mountpoint -q "$dst" 2>/dev/null; then
+    umount "$dst"
+    info "unbound $dst"
+  fi
+  rm -f "$LFS/var/lib/misl/chroot-net"
+  if [[ ! -e $dst ]]; then
+    ln -sfn /run/systemd/resolve/resolv.conf "$dst"
+  fi
+  info "chroot DNS off"
+}
+
+misl_net_status() {
+  require_lfs_set
+  local dst=$LFS/etc/resolv.conf
+  if [[ ${LFS:-} == / ]]; then
+    printf 'inside chroot resolv.conf -> %s\n' "$(readlink -f /etc/resolv.conf 2>/dev/null || echo /etc/resolv.conf)"
+    cat /etc/resolv.conf 2>/dev/null || true
+    return 0
+  fi
+  if mountpoint -q "$dst" 2>/dev/null; then
+    info "on  $dst is a bind mount"
+  else
+    info "off $dst is not a bind mount"
+  fi
+}
+
+misl_net() {
+  local sub=${1:-status}
+  case $sub in
+    on) misl_net_on ;;
+    off) misl_net_off ;;
+    status|show|"") misl_net_status ;;
+    *) die "usage: misl net on|off|status" ;;
+  esac
 }
 
 misl_enter() {
   require_root
   require_lfs_set
+  local with_net=0
+  while [[ $# -gt 0 ]]; do
+    case $1 in
+      --net|-n) with_net=1; shift ;;
+      -h|--help)
+        printf '%s\n' "usage: misl enter [--net]"
+        return 0
+        ;;
+      *) die "usage: misl enter [--net]" ;;
+    esac
+  done
   [[ -x $LFS/usr/bin/env || -x $LFS/bin/bash ]] || \
     die "target has no /usr/bin/env; finish 06-temp and misl chroot prep"
   misl_kernfs_mount
   misl_bind_bootstrap
+  [[ $with_net == 1 ]] && misl_net_on
   info "entering $LFS (LFS=/ inside). scripts are $MISL_ROOT bound at /usr/src/misl/mislinux"
   exec chroot "$LFS" /usr/bin/env -i \
     HOME=/root \

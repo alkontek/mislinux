@@ -78,13 +78,48 @@ misl_lfs_user() {
   misl_snapshot_share
 }
 
+misl_reexec_as_lfs() {
+  [[ ${EUID:-$(id -u)} -eq 0 ]] || return 0
+  [[ ${MISL_AS_LFS:-0} == 1 ]] && return 0
+  require_lfs_set
+  local home dest q
+  home=$(getent passwd lfs | awk -F: '{print $6}')
+  [[ -n $home ]] || die "lfs user missing; run: ./misl prep"
+  dest=$home/mislinux
+  # Root pulls into /root/mislinux. lfs cannot read /root. Always
+  # refresh ~lfs/mislinux so install-serial and recipe fixes apply.
+  misl_lfs_publish_bootstrap
+  [[ -f $dest/misl ]] || die "no $dest/misl after publish"
+  q=$(printf '%q ' "$@")
+  info "re-exec as lfs (no login): ./misl $q"
+  # No login shell: the book .bash_profile would exec env -i and drop -c.
+  exec su lfs -s /bin/bash -c "
+    cd $(printf '%q' "$dest") || exit 1
+    export HOME=$(printf '%q' "$home")
+    export LFS=$(printf '%q' "$LFS")
+    export LFS_TGT=$(printf '%q' "${LFS_TGT:-}")
+    export MISL_MAKEFLAGS=$(printf '%q' "${MISL_MAKEFLAGS:-}")
+    export MAKEFLAGS=\$MISL_MAKEFLAGS
+    export LC_ALL=POSIX
+    export PATH=$(printf '%q' "$LFS/tools/bin:/usr/bin:/bin")
+    export MISL_AS_LFS=1
+    exec ./misl $q
+  "
+}
+
 misl_environment() {
   require_root
   local home
   home=$(getent passwd lfs | awk -F: '{print $6}')
   [[ -n $home ]] || die "lfs user missing; run prep first"
   cat > "$home/.bash_profile" <<'EOF'
-exec env -i HOME=$HOME TERM=$TERM PS1='\u:\w\$ ' /bin/bash
+# Book 4.4 strips the environment on an interactive login.
+# su - lfs -c '…' must not hit exec, or the command never runs.
+if [[ $- == *i* && -z ${BASH_EXECUTION_STRING:-} ]]; then
+  exec env -i HOME="$HOME" TERM="$TERM" PS1='\u:\w\$ ' /bin/bash
+fi
+# login + -c does not source .bashrc by itself
+[[ -f $HOME/.bashrc ]] && . "$HOME/.bashrc"
 EOF
   cat > "$home/.bashrc" <<EOF
 set +h

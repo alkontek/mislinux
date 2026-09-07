@@ -3,9 +3,9 @@
 
 # Disk safety
 
-`misl disk apply` is **policy A in 0.2**: it checks the gates, prints the
+`misl disk apply` is **policy A**: it checks the gates, prints the
 plan, and **does not** call `parted`, `mkfs`, or `mount`. That is the spec,
-not a missing feature. Real formatting is 0.3.
+not a missing feature. Partition and mount stay operator-run.
 
 `MISL_DISK` is a required parameter (config or environment). It is never
 defaulted. Persistent by-id paths are valid and preferred:

@@ -31,6 +31,6 @@ pkg_configure() {
 pkg_build() { make ${MISL_MAKEFLAGS:-}; }
 
 pkg_install() {
-  make DESTDIR="$LFS" install
+  misl_make_install DESTDIR="$LFS" install
   rm -fv "$LFS/usr/lib"/lib{bfd,ctf,ctf-nobfd,gprofng,opcodes,sframe}.la
 }

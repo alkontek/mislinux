@@ -53,7 +53,12 @@ pkg_build() {
 }
 
 pkg_install() {
-  make install
-  cat ../gcc/{limitx,glimits,limity}.h > \
-    "$("$LFS_TGT-gcc" -print-file-name=include)/limits.h"
+  local cc inc
+  misl_ensure_dir "$LFS/tools/bin"
+  misl_make_install install
+  cc=$LFS/tools/bin/$LFS_TGT-gcc
+  [[ -x $cc ]] || die "missing $cc after gcc pass1 install"
+  inc=$("$cc" -print-file-name=include)
+  [[ -n $inc && $inc != include ]] || die "$cc -print-file-name=include failed"
+  cat ../gcc/{limitx,glimits,limity}.h >"$inc/limits.h"
 }

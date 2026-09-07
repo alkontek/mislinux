@@ -11,8 +11,24 @@ misl_lfs_join() {
   printf '%s/%s\n' "$root" "${1#/}"
 }
 
+# Serial install is only for binutils/gcc (tools/bin mkdir vs
+# install-exec-bindir). Compile always uses MISL_MAKEFLAGS (-j2
+# on the VPS). Do not unset MAKEFLAGS around pkg_build.
+misl_ensure_dir() {
+  local d=$1
+  if [[ -L $d || -e $d ]] && [[ ! -d $d ]]; then
+    warn "replacing non-directory $d"
+    rm -f "$d"
+  fi
+  mkdir -p "$d"
+}
+
+misl_make_install() {
+  env -u MAKEFLAGS -u MFLAGS make -j1 "$@"
+}
+
 recipe_reset() {
-  unset pkg_name pkg_version pkg_tarball pkg_patches pkg_stage pkg_pass pkg_builddir pkg_unpack
+  unset pkg_name pkg_version pkg_tarball pkg_patches pkg_stage pkg_pass pkg_builddir pkg_unpack pkg_requires
   unset -f pkg_pre_configure pkg_configure pkg_build pkg_install pkg_post_install 2>/dev/null || true
 }
 
@@ -45,6 +61,27 @@ recipe_require_tarball() {
   printf '%s\n' "$path"
 }
 
+# pkg_requires="openssl zlib" — same-stage stamps first, then any stage.
+recipe_require_deps() {
+  local dep stamp dir found
+  [[ -n ${pkg_requires:-} ]] || return 0
+  dir=$(misl_lfs_join var/lib/misl/stamps)
+  for dep in $pkg_requires; do
+    [[ -n $dep ]] || continue
+    stamp=$dir/${pkg_stage}-${dep}-1.done
+    if [[ -f $stamp ]]; then
+      info "dep OK $dep ($stamp)"
+      continue
+    fi
+    found=$(ls -1 "$dir"/*-"${dep}"-*.done 2>/dev/null | head -1 || true)
+    if [[ -n $found && -f $found ]]; then
+      info "dep OK $dep ($found)"
+      continue
+    fi
+    die "$pkg_name requires $dep (no stamp under $dir); build $dep first"
+  done
+}
+
 recipe_preflight() {
   local path expect actual
   path=$(recipe_find_tarball "$pkg_tarball") || die "tarball not staged: $pkg_tarball (other wget-list files may still be missing)"
@@ -71,6 +108,7 @@ recipe_main() {
 
   if [[ $pkg_stage == 05-cross || $pkg_stage == 06-temp ]]; then
     [[ ${EUID:-$(id -u)} -ne 0 ]] || die "chapter 5/6 recipes must run as user lfs, not root"
+    info "uid=$(id -u) user=$(id -un) stage=$pkg_stage name=$pkg_name"
   fi
   if [[ $pkg_stage == 07-chroot-temp || $pkg_stage == 08-system || $pkg_stage == 09-config || $pkg_stage == 10-boot ]]; then
     [[ ${EUID:-$(id -u)} -eq 0 ]] || die "chapter 7+ recipes must run as root (misl enter)"
@@ -80,6 +118,8 @@ recipe_main() {
   stamp=$(recipe_stamp)
   log=$(recipe_log)
   mkdir -pv "$(dirname "$stamp")" "$(dirname "$log")"
+
+  recipe_require_deps
 
   if [[ -f $stamp && ${MISL_FORCE:-0} != 1 ]]; then
     info "skip $pkg_name pass=$pkg_pass (stamp exists)"

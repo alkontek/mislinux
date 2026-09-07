@@ -52,7 +52,7 @@ misl_codename_display() {
 }
 
 # Compose the file that becomes $LFS/etc/os-release (and usr/lib/os-release).
-# 0.2 emits VERSION_ID=0.2 with no codename. Farpoint fields apply when
+# VERSION_ID follows MISL_VERSION. Farpoint fields apply when
 # MISL_VERSION equals MISL_DIST_VERSION (1.0).
 misl_os_release_text() {
   local ver=$MISL_VERSION pretty=$MISL_PRETTY_NAME
@@ -67,6 +67,12 @@ misl_os_release_text() {
   printf 'PRETTY_NAME="%s"\n' "$pretty"
   printf 'VARIANT="%s"\n' "$MISL_VARIANT"
   printf 'VARIANT_ID=%s\n' "$MISL_VARIANT_ID"
+  if declare -F misl_overlay_active_qnames >/dev/null 2>&1; then
+    local ov
+    ov=$(misl_overlay_active_qnames | tr '\n' ' ')
+    ov=${ov%% }
+    [[ -n $ov ]] && printf 'MISL_OVERLAYS="%s"\n' "$ov"
+  fi
 }
 
 misl_write_os_release() {
@@ -162,11 +168,52 @@ misl_load_config() {
   [[ $MISL_VARIANT == systemd ]] || die "MISL_VARIANT=$MISL_VARIANT is not supported"
   [[ $MISL_VARIANT_ID == "$MISL_VARIANT" ]] || \
     die "MISL_VARIANT_ID=$MISL_VARIANT_ID must match MISL_VARIANT=$MISL_VARIANT"
-  [[ $MISL_ARCH == x86_64 ]] || die "MISL_ARCH=$MISL_ARCH is not supported in 0.2"
+  [[ $MISL_ARCH == x86_64 ]] || die "MISL_ARCH=$MISL_ARCH is not supported"
   [[ $MISL_BOOT_MIB =~ ^[1-9][0-9]*$ ]] || die "MISL_BOOT_MIB=$MISL_BOOT_MIB is not a positive integer"
   case ${MISL_FIRMWARE,,} in
     efi|uefi|bios|auto) ;;
     *) die "MISL_FIRMWARE=$MISL_FIRMWARE (want efi|bios|auto)" ;;
   esac
   [[ $(basename "$MISL_WGET_LIST") != wget-list.original ]] || die "refusing wget-list.original"
+}
+
+# Site pins. Environment wins over misl.conf. Snapshot / fetch / firmware
+# already have defaults; LFS and MISL_DISK do not.
+misl_env() {
+  local mode=${1:-list} key val
+  local keys=(
+    LFS
+    MISL_DISK
+    MISL_PART_BOOT
+    MISL_PART_ROOT
+    MISL_FIRMWARE
+    MISL_MAKEFLAGS
+    MISL_FETCH
+    MISL_SNAPSHOT
+    MISL_MIRROR
+  )
+  case $mode in
+    list|""|show) mode=list ;;
+    export) mode=export ;;
+    *) die "usage: misl env [list|export]" ;;
+  esac
+  if [[ -n ${MISL_DISK:-} ]]; then
+    misl_disk_resolve_parts
+  fi
+  for key in "${keys[@]}"; do
+    if [[ -n ${!key+x} && -n ${!key} ]]; then
+      val=${!key}
+      if [[ $mode == export ]]; then
+        printf 'export %s=%q\n' "$key" "$val"
+      else
+        printf '%s=%s\n' "$key" "$val"
+      fi
+    else
+      if [[ $mode == export ]]; then
+        printf '# %s is unset\n' "$key"
+      else
+        printf '%s=\n' "$key"
+      fi
+    fi
+  done
 }

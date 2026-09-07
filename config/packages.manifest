@@ -114,6 +114,8 @@
 08-system procps-ng 4.0.7 procps-ng-4.0.7.tar.xz - implemented=0.2
 08-system util-linux 2.42.2 util-linux-2.42.2.tar.xz - implemented=0.2
 08-system e2fsprogs 1.47.4 e2fsprogs-1.47.4.tar.gz - implemented=0.2
+08-system openssh 10.5p1 openssh-10.5p1.tar.gz - implemented=0.3
+08-system nano 9.2 nano-9.2.tar.xz - implemented=0.3
 09-config systemd-config 261.2 - - implemented=0.2
 09-config usr-bin 0.2 - - implemented=0.2 overlay=usr/bin
 10-boot linux 7.1.8 linux-7.1.8.tar.xz - implemented=0.2

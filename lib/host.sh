@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: BSD-2-Clause
 
 # shellcheck shell=bash
-# Fedora 44 / book 2.2 host checks + host-dep install.
+# Fedora 44 host-dep install.
 
 _ver_ge() {
   python3 - "$1" "$2" >/dev/null <<'PY'
@@ -14,12 +14,12 @@ raise SystemExit(0 if a >= b else 1)
 PY
 }
 
-# Book 2.2 tools plus the bits this bootstrap actually invokes
+# Tools plus the bits this bootstrap actually invokes
 # (wget, parted, mkfs.ext4, mkfs.vfat).
 misl_fedora_host_rpms() {
   printf '%s\n' \
     bash binutils bison gcc gcc-c++ make patch \
-    perl python3 \
+    perl python3 python3-pip \
     glibc-devel \
     coreutils diffutils findutils gawk grep gzip sed tar xz \
     texinfo \
@@ -27,7 +27,7 @@ misl_fedora_host_rpms() {
     parted e2fsprogs dosfstools
 }
 
-# Fedora 44 bison no longer ships /usr/bin/yacc (book 2.2 wants it → bison).
+# Fedora 44 no longer ships yacc, link to /usr/bin/bison instead
 misl_ensure_yacc() {
   if [[ -e /usr/bin/yacc ]]; then
     return 0
@@ -175,6 +175,17 @@ misl_doctor() {
     bv=$(ld --version | head -1 | grep -oE '[0-9]+(\.[0-9]+)+' | head -1)
     if [[ -n $bv ]] && _ver_ge "$bv" 2.47.1; then
       note "host binutils $bv is newer than LFS 13.1-systemd tested ceiling 2.47.0"
+    fi
+  fi
+
+  if [[ ${LFS:-} != / && -n ${LFS:-} && -d $LFS/usr/src/misl/mislinux ]]; then
+    local ha hb
+    ha=$(stat -c %d:%i "$MISL_ROOT/misl" 2>/dev/null || true)
+    hb=$(stat -c %d:%i "$LFS/usr/src/misl/mislinux/misl" 2>/dev/null || true)
+    if [[ -n $ha && -n $hb && $ha != "$hb" ]]; then
+      note "$LFS/usr/src/misl/mislinux is not this tree. ./misl enter remounts it over the chroot-prep snapshot"
+    elif mountpoint -q "$LFS/usr/src/misl/mislinux"; then
+      info "chroot bootstrap bound to $MISL_ROOT"
     fi
   fi
 

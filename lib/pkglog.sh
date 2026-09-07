@@ -19,7 +19,9 @@ misl_status() {
     [[ -n ${LFS:-} ]] && stamp=$LFS/var/lib/misl/stamps/${stage}-${name}-${pass}.done
     if [[ -n $stamp && -f $stamp ]]; then
       state=done
-    elif [[ $notes == *implemented=0.2* ]]; then
+    elif [[ -n ${LFS:-} && -f $LFS/var/lib/misl/integrated/$name ]]; then
+      state=integrated
+    elif [[ $notes == *implemented=* ]]; then
       state=ready
     else
       state=stub

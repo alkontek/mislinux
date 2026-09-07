@@ -33,12 +33,15 @@ pkg_install() {
     make install
   fi
 
-  # BIOS modules as well (VPS / fallback). Rebuild in-tree for i386-pc.
+  # BIOS modules. GRUB 2.14 configure prefers -Wl,--image-base, which
+  # puts i386-pc .text at 0x9074. grub-install then dies with the
+  # "ld.gold bug?" text (LFS #5857). Force the old -Ttext link.
   make distclean >/dev/null 2>&1 || make clean || true
   echo "depends bli part_gpt" > grub-core/extra_deps.lst
   ./configure --prefix=/usr --sysconfdir=/etc \
               --disable-efiemu --disable-werror \
-              --with-platform=pc --target=i386
+              --with-platform=pc --target=i386 \
+              ax_cv_check_ldflags___Wl___image_base_0x400000=no
   make ${MISL_MAKEFLAGS:-}
   if [[ -n $dest ]]; then
     make DESTDIR="$dest" install
@@ -47,5 +50,7 @@ pkg_install() {
   fi
 
   local efi_mod=${dest}/usr/lib/grub/x86_64-efi/modinfo.sh
+  local pc_img=${dest}/usr/lib/grub/i386-pc/kernel.img
   [[ -f $efi_mod ]] || die "GRUB EFI modules missing at $efi_mod"
+  [[ -f $pc_img ]] || die "GRUB i386-pc kernel.img missing at $pc_img"
 }

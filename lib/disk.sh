@@ -3,12 +3,7 @@
 
 # shellcheck shell=bash
 # Destructive helpers. Dry-run unless MISL_DRY_RUN=0 and confirm is set.
-# 0.2 apply is policy A: gates + plan only. parted/mkfs/mount stay operator-run.
 
-# Partition node for DISK + index.
-#   /dev/sda                  → /dev/sdaN
-#   /dev/nvme0n1|/dev/mmcblk0 → /dev/nvme0n1pN
-#   /dev/disk/by-id/FOO       → /dev/disk/by-id/FOO-partN  (udev)
 misl_disk_part() {
   local disk=$1 n=$2
   [[ -n $disk && -n $n ]] || die "misl_disk_part: disk and index required"
@@ -68,10 +63,13 @@ misl_firmware_resolve() {
   export MISL_FIRMWARE
 }
 
-# EFI: 1 GiB FAT32 ESP at $LFS/boot/efi (later EFI/misl) + ext4 root.
+# EFI: 1 GiB FAT32 ESP at $LFS/boot/efi + ext4 root.
 # BIOS: 1 MiB bios_grub + 1 GiB ext4 /boot + ext4 root. No swap.
 misl_disk_resolve_parts() {
-  [[ -n ${MISL_DISK:-} ]] || die "MISL_DISK is not set"
+  # Stage 09 runs inside the chroot; MISL_DISK is a host path and
+  # is often unset. Callers that require a disk (plan/apply) die
+  # themselves. Do not exit 1 here — die bypasses `|| true`.
+  [[ -n ${MISL_DISK:-} ]] || return 1
   misl_firmware_resolve
   if [[ $MISL_FIRMWARE == efi ]]; then
     [[ -n ${MISL_PART_BOOT:-} ]] || MISL_PART_BOOT=$(misl_disk_part "$MISL_DISK" 1)
@@ -114,7 +112,7 @@ misl_disk_plan() {
   if [[ $MISL_FIRMWARE == efi ]]; then
     info "firmware=efi → gpt + p1 ${MISL_BOOT_MIB}MiB vfat ESP (/boot/efi, later EFI/misl) + p2 $MISL_FSTYPE root. no swap."
     cat <<EOF
-# plan only — 0.2 does not execute these
+# plan only — policy A does not execute these
 # parted -s $MISL_DISK mklabel gpt
 # parted -s $MISL_DISK mkpart ESP fat32 1MiB ${boot_end}MiB
 # parted -s $MISL_DISK set 1 esp on
@@ -130,7 +128,7 @@ EOF
     boot_end=$((boot_start + MISL_BOOT_MIB))
     info "firmware=bios → gpt + p1 bios_grub + p2 ${MISL_BOOT_MIB}MiB $MISL_FSTYPE /boot + p3 $MISL_FSTYPE root. no swap."
     cat <<EOF
-# plan only — 0.2 does not execute these
+# plan only — policy A does not execute these
 # parted -s $MISL_DISK mklabel gpt
 # parted -s $MISL_DISK mkpart bios_grub 1MiB ${boot_start}MiB
 # parted -s $MISL_DISK set 1 bios_grub on
@@ -159,5 +157,5 @@ misl_disk_apply() {
     die "MISL_DISK=$MISL_DISK ($disk_real) backs the host root; set MISL_ALLOW_HOST_DISK=1 to override"
   fi
   misl_disk_plan
-  die "0.2 disk apply stops after gates+plan (policy A). Partition and mount \$LFS by hand."
+  die "disk apply stops after gates+plan (policy A). Partition and mount \$LFS by hand."
 }

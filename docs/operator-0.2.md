@@ -143,16 +143,15 @@ Do not copy `misl-1.0-systemd` tarballs into `~lfs`. They are already on
 
 ### Chapter 5 cross toolchain (user `lfs` only)
 
+Chapter 5/6 run as `lfs`. From root after `prep publish`:
+
 ```
-su - lfs
-cd ~/mislinux
-./misl build binutils-pass1
-./misl build gcc-pass1
-./misl build linux-api-headers
-./misl build glibc
-./misl build libstdcxx
+./misl build-stage 05-cross
 ./misl status
 ```
+
+`misl` re-execs as `lfs` without a login shell. `su - lfs -c` hits
+the book `exec env -i` profile and drops you at `lfs:~$`.
 
 `gcc-pass1` is the long one on 2C/4G. Logs:
 
@@ -166,25 +165,11 @@ Add **host** swap on the Fedora disk if gcc OOMs. Do not put swap on
 Book order. `gcc-pass2` is the other long compile.
 
 ```
-./misl build m4
-./misl build ncurses
-./misl build bash
-./misl build coreutils
-./misl build diffutils
-./misl build file
-./misl build findutils
-./misl build gawk
-./misl build grep
-./misl build gzip
-./misl build make
-./misl build patch
-./misl build sed
-./misl build tar
-./misl build xz
-./misl build binutils-pass2
-./misl build gcc-pass2
+./misl build-stage 06-temp
 ./misl status
 ```
+
+Same re-exec as chapter 5. Individual names: `./misl build 06-temp/m4`.
 
 ### Chapter 7 chroot temporary tools (root)
 

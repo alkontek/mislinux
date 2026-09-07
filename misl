@@ -29,6 +29,14 @@ misl_load_config
 . "$MISL_ROOT/lib/pkglog.sh"
 # shellcheck source=lib/version.sh
 . "$MISL_ROOT/lib/version.sh"
+# shellcheck source=lib/overlay.sh
+. "$MISL_ROOT/lib/overlay.sh"
+# shellcheck source=lib/cloud.sh
+. "$MISL_ROOT/lib/cloud.sh"
+# shellcheck source=lib/img.sh
+. "$MISL_ROOT/lib/img.sh"
+# shellcheck source=lib/iso.sh
+. "$MISL_ROOT/lib/iso.sh"
 
 misl_help() {
   cat <<EOF
@@ -37,17 +45,23 @@ usage: misl <command> [args]
 
   version              print bootstrap version and os-release identity
   bump minor|major|undo|X.Y rewrite VERSION + misl.conf (+ example)
+  env [list|export]    print resolved site pins (export: shell assignments)
   os-release           print the composed /etc/os-release text
   help                 this text
-  doctor               host qualification (Fedora 44 / book 2.2)
+  doctor               host qualification (Fedora 44)
   doctor pkgs          print Fedora 44 dnf install line
   doctor install       dnf install host deps (root, Fedora)
   disk plan            print partition/mount plan (no writes)
-  disk apply           gates + plan only in 0.2 (does not format)
-  sources fetch        create \$MISL_SNAPSHOT and wget wget-list files
+  disk apply           gates + plan only (policy A; does not format)
+  sources fetch        refresh catalog, create \$MISL_SNAPSHOT, wget wget-list files
+  sources refresh      replace snapshot wget-list + md5sums from \$MISL_MIRROR
+  sources integrate [--reintegrate] <name>
+                       host only: refresh catalog, fetch one package, stage
+                       (prints chroot build next; does not compile)
   sources check        verify wget-list files against md5sums
   sources stage        hardlink verified files into \$LFS/usr/src/misl
-  sources remote       HEAD-check makeitsolinux.org (no download)
+  sources remote       HEAD-check \$MISL_MIRROR wget-list + md5sums (no download)
+  integrate            alias for sources integrate
   prep                 chapter 4 layout + lfs user + env + grant \$LFS
   prep publish         also copy mislinux/ into ~lfs (not the tarball tree)
   build <recipe>       run a stages/* recipe (stage/name if ambiguous)
@@ -57,21 +71,62 @@ usage: misl <command> [args]
   config               print last chapter-9 config report
   config apply         re-run 09-config/systemd-config (MISL_FORCE=1)
   chroot prep          ch7 owner + virtfs + files + publish scripts into $LFS
-  enter                chroot into $LFS as root
+  enter [--net]        chroot into $LFS as root (--net: host DNS for the session)
+  net on|off|status    bind host resolv.conf into \$LFS (host only, not permanent)
+  overlay list|status|apply|undo|install
+                       named extras on the base tree (cloud, do, …)
+  cloud apply          overlay apply cloud do (compat)
+  cloud undo           overlay undo do then cloud
+  cloud install        chroot: meson-install cloud-init (cloud overlay)
+  cloud status         print \$LFS/var/lib/misl/cloud.report
+  cloud sanitize       drop machine-id / ssh host keys / cloud-init seed
+  cloud wheels         host: pip download deps into incoming/ (needs DNS)
+  img pack             host root: pack \$LFS into a BIOS GPT .img
+  img test             host qemu of that .img (--virtio default, --ide to compare)
+  iso pack             host root: live ISO from a packed .img (--uefi default)
+  iso test             host qemu of that .iso (--uefi default, --bios for SeaBIOS)
+  iso test --inspect   mount ISO, unpack initramfs, list /init + libs (no qemu)
+  iso inspect          same as iso test --inspect
+  iso usb --list       USB disk nodes under /dev/disk/by-id/usb-* (no -part)
+  iso usb ISO DISK     wipe that stick as GPT+ESP and copy a --uefi ISO
+                       MISL_FORCE=1 ; example:
+                       MISL_FORCE=1 ./misl iso usb FILE.iso /dev/disk/by-id/usb-SanDisk_Cruzer_Blade_...-0:0
 
 Sources: $MISL_WGET_LIST
 Snapshot: $MISL_SNAPSHOT
 Mirror: $MISL_MIRROR
-Never uses wget-list.original. Fetch defaults to on; agent sessions must not run it.
 EOF
+}
+
+# Manifest column 2 is pkg_name (binutils). The file can be
+# binutils-pass1.sh or libstdcxx.sh (pkg_name=libstdc++).
+misl_recipe_in_stage() {
+  local stage=$1 want=$2 f cand pname
+  f=$MISL_ROOT/stages/$stage/${want}.sh
+  [[ -f $f ]] && { printf '%s\n' "$f"; return 0; }
+  for cand in "$MISL_ROOT/stages/$stage"/*.sh; do
+    [[ -f $cand ]] || continue
+    pname=$(awk -F= '/^pkg_name=/{gsub(/["\047]/,"",$2); print $2; exit}' "$cand")
+    [[ $pname == "$want" ]] || continue
+    printf '%s\n' "$cand"
+    return 0
+  done
+  return 1
 }
 
 misl_build() {
   local name=${1:-} f
   [[ -n $name ]] || die "usage: misl build <recipe|stage/recipe>"
+  case $name in
+    05-cross/*|06-temp/*)
+      if [[ ${EUID:-$(id -u)} -eq 0 && ${MISL_AS_LFS:-0} != 1 ]]; then
+        misl_reexec_as_lfs build "$name"
+      fi
+      ;;
+  esac
   if [[ $name == */* ]]; then
-    f=$MISL_ROOT/stages/${name}.sh
-    [[ -f $f ]] || die "no recipe $name"
+    f=$(misl_recipe_in_stage "${name%%/*}" "${name#*/}") \
+      || die "no recipe $name"
   else
     local matches n
     matches=$(find "$MISL_ROOT/stages" -type f -name "${name}.sh" | sort)
@@ -138,6 +193,13 @@ misl_build_stage() {
   local stage=${1:-} line name
   [[ -n $stage ]] || die "usage: misl build-stage <05-cross|06-temp|07-chroot-temp|08-system|09-config|10-boot>"
   require_lfs_set
+  case $stage in
+    05-cross|06-temp)
+      if [[ ${EUID:-$(id -u)} -eq 0 && ${MISL_AS_LFS:-0} != 1 ]]; then
+        misl_reexec_as_lfs build-stage "$stage"
+      fi
+      ;;
+  esac
   while read -r line; do
     [[ $line == ${stage}\ * ]] || continue
     name=$(awk "{print \$2}" <<<"$line")
@@ -150,12 +212,18 @@ cmd=${1:-help}
 shift || true
 case $cmd in
   bump) misl_bump "$@" ;;
+  env) misl_env "${1:-list}" ;;
   version|-v|--version)
     printf 'MIS Linux %s\n' "$MISL_VERSION"
     printf 'NAME="%s" ID=%s VERSION_ID="%s" VARIANT="%s" VARIANT_ID=%s\n' \
       "$MISL_NAME" "$MISL_ID" "$MISL_VERSION_ID" "$MISL_VARIANT" "$MISL_VARIANT_ID"
     printf 'PRETTY_NAME="%s"\n' "$MISL_PRETTY_NAME"
     printf 'DIST_VERSION=%s DIST_CODENAME=%s\n' "$MISL_DIST_VERSION" "$MISL_DIST_CODENAME"
+    if [[ -n ${LFS:-} ]]; then
+      names=$(misl_overlay_active_qnames 2>/dev/null | tr '\n' ' ')
+      names=${names%% }
+      [[ -n $names ]] && printf 'MISL_OVERLAYS="%s"\n' "$names"
+    fi
     ;;
   os-release) misl_os_release_text ;;
   help|-h|--help) misl_help ;;
@@ -182,13 +250,16 @@ case $cmd in
       check) misl_sources_check ;;
       stage) misl_sources_stage ;;
       fetch) misl_sources_fetch ;;
-      remote) bash "$MISL_ROOT/scripts/check-mirror.sh" ;;
-      *) die "usage: misl sources check|stage|fetch|remote" ;;
+      refresh) misl_catalog_refresh ;;
+      integrate) misl_sources_integrate "$@" ;;
+      remote) misl_sources_remote ;;
+      *) die "usage: misl sources check|stage|fetch|refresh|integrate|remote" ;;
     esac
     ;;
   prep) misl_prep "${1:-}" ;;
   build) misl_build "${1:-}" ;;
   build-stage) misl_build_stage "${1:-}" ;;
+  integrate) misl_sources_integrate "$@" ;;
   status) misl_status ;;
   config)
     sub=${1:-show}
@@ -212,11 +283,16 @@ case $cmd in
     sub=${1:-enter}; shift || true
     case $sub in
       prep) misl_chroot_prep ;;
-      enter|"") misl_enter ;;
+      enter|"") misl_enter "$@" ;;
       mounts) misl_kernfs_mount ;;
       *) die "usage: misl chroot [prep|enter|mounts]" ;;
     esac
     ;;
-  enter) misl_enter ;;
+  enter) misl_enter "$@" ;;
+  net) misl_net "$@" ;;
+  overlay|overlays) misl_overlay "$@" ;;
+  cloud) misl_cloud "$@" ;;
+  img|image) misl_img "$@" ;;
+  iso) misl_iso "$@" ;;
   *) die "unknown command: $cmd (try: misl help)" ;;
 esac

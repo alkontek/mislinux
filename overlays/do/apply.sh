@@ -2,7 +2,4 @@
 # SPDX-License-Identifier: BSD-2-Clause
 
 # shellcheck shell=bash
-
-# See docs/disk-safety.md.
-misl_disk_plan
-die "mount is operator-run: policy A don't create for format disks"
+misl_overlay_do_apply

@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: BSD-2-Clause
 
 # shellcheck shell=bash
-# 0.2 does not mount the target disk. See docs/disk-safety.md.
+
+# See docs/disk-safety.md.
 require_lfs_set
 [[ -n ${MISL_DISK:-} ]] || die "MISL_DISK is not set"
-die "mount is operator-run in 0.2: mkdir -p \$LFS && mount <root-part> \$LFS"
+die "mount is operator-run: policy A don't create for format disks"

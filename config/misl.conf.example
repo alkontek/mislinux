@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 ALKONTEK <git@alkontek.com>
+# SPDX-License-Identifier: BSD-2-Clause
+
 # MIS Linux bootstrap — copy to misl.conf and edit.
 # Environment variables with the same names override this file.
 # Versions are major.minor only (no patch component).
@@ -10,12 +13,12 @@
 #   MISL_VERSION_CODENAME       = empty until a named release
 #   MISL_DIST_*                 = product goal; applied when
 #                                 MISL_VERSION == MISL_DIST_VERSION
-MISL_VERSION=0.2
+MISL_VERSION=0.3
 MISL_NAME="MIS Linux"
 MISL_ID=misl
-MISL_VERSION_ID=0.2
+MISL_VERSION_ID=0.3
 MISL_VERSION_CODENAME=
-MISL_PRETTY_NAME="MIS Linux 0.2"
+MISL_PRETTY_NAME="MIS Linux 0.3"
 MISL_VARIANT="systemd"
 MISL_VARIANT_ID=systemd
 MISL_DIST_VERSION=1.0
@@ -50,8 +53,6 @@ MISL_WGET_LIST=
 MISL_MD5SUMS=
 MISL_PATCHES=
 MISL_SOURCES=
-# Operator default is fetch on. Agent sessions must export MISL_FETCH=0
-# and must not run `misl sources fetch`.
 MISL_FETCH=1
 
 # Chapter 9 (no prompts). Root hash from: openssl passwd -6

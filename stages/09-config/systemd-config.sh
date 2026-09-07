@@ -1,3 +1,4 @@
+# SPDX-FileCopyrightText: 2026 ALKONTEK <git@alkontek.com>
 # SPDX-License-Identifier: BSD-2-Clause
 
 # shellcheck shell=bash
@@ -8,9 +9,6 @@ pkg_tarball=systemd-261.2.tar.gz
 pkg_patches=
 pkg_stage=09-config
 pkg_pass=1
-# 0.2 writes a placeholder os-release at prep from config identity vars.
-# This stage will refresh it (and the rest of chapter 9) in a later minor.
-pkg_configure() { die "stub: systemd-config not implemented in 0.2"; }
 pkg_unpack=no
 pkg_builddir=in-tree
 
@@ -92,7 +90,9 @@ pkg_install() {
     ln -sfv "/usr/share/zoneinfo/${tz}" "${dest}/etc/localtime"
   fi
 
-  misl_disk_resolve_parts 2>/dev/null || true
+  if ! misl_disk_resolve_parts; then
+    info "MISL_DISK unset; fstab root line stays a comment until pack"
+  fi
   root_dev=${MISL_PART_ROOT:-}
   boot_dev=${MISL_PART_BOOT:-}
   root_uuid=

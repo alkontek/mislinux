@@ -21,17 +21,27 @@ pkg_install() {
   kver=7.1.8-misl
   command -v grub-install >/dev/null 2>&1 || die "grub-install missing (build 08-system/grub first)"
 
-  misl_disk_resolve_parts
-  root_dev=$MISL_PART_ROOT
+  # Host by-id path is often unset or invisible in the chroot. Do not
+  # die — EFI grub-install only needs /boot/efi. Same as 09-config.
+  if ! misl_disk_resolve_parts; then
+    info "MISL_DISK unset in chroot; grub.cfg root= from findmnt/blkid"
+  fi
+  root_dev=${MISL_PART_ROOT:-}
   boot_dev=${MISL_PART_BOOT:-}
   root_uuid=
-  command -v blkid >/dev/null 2>&1 && [[ -e $root_dev ]] && \
-    root_uuid=$(blkid -s UUID -o value "$root_dev" || true)
-  if [[ -n $root_uuid ]]; then
-    cmdline="root=UUID=${root_uuid} ro rootfstype=${MISL_FSTYPE:-ext4}"
-  else
-    cmdline="root=${root_dev} ro rootfstype=${MISL_FSTYPE:-ext4}"
+  if command -v blkid >/dev/null 2>&1; then
+    [[ -n $root_dev && -e $root_dev ]] && \
+      root_uuid=$(blkid -s UUID -o value "$root_dev" || true)
+    if [[ -z $root_uuid ]]; then
+      local src
+      src=$(findmnt -n -o SOURCE / 2>/dev/null || true)
+      [[ -n $src && -e $src ]] && root_uuid=$(blkid -s UUID -o value "$src" || true)
+    fi
   fi
+  # Never guess a kernel name (/dev/sdaN). Wrong disk is worse than fail.
+  [[ -n $root_uuid ]] || \
+    die "no root UUID (blkid on MISL_PART_ROOT or findmnt /). set MISL_PART_ROOT to a device visible in this chroot"
+  cmdline="root=UUID=${root_uuid} ro rootfstype=${MISL_FSTYPE:-ext4}"
 
   mkdir -pv "${dest}/boot/grub" "${dest}/boot/efi"
   efi_dir=/boot/efi
